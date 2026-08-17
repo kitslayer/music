@@ -23,7 +23,7 @@ enum AlbumSort: String, CaseIterable, Identifiable, Sendable {
 
 // MARK: - Library items
 
-struct Album: Decodable, Identifiable, Hashable, Sendable {
+struct Album: Codable, Identifiable, Hashable, Sendable {
     let id: String
     let name: String
     var artist: String?
@@ -71,7 +71,7 @@ struct Song: Codable, Identifiable, Hashable, Sendable {
     var albumOrder: Int { (discNumber ?? 1) * 1000 + (track ?? 0) }
 }
 
-struct Artist: Decodable, Identifiable, Hashable, Sendable {
+struct Artist: Codable, Identifiable, Hashable, Sendable {
     let id: String
     let name: String
     var albumCount: Int?
@@ -80,12 +80,12 @@ struct Artist: Decodable, Identifiable, Hashable, Sendable {
     var starred: String?
 }
 
-struct MusicFolder: Decodable, Identifiable, Hashable, Sendable {
+struct MusicFolder: Codable, Identifiable, Hashable, Sendable {
     let id: Int
     let name: String
 }
 
-struct Playlist: Decodable, Identifiable, Hashable, Sendable {
+struct Playlist: Codable, Identifiable, Hashable, Sendable {
     let id: String
     let name: String
     var comment: String?
@@ -96,7 +96,7 @@ struct Playlist: Decodable, Identifiable, Hashable, Sendable {
     var changed: String?
 }
 
-struct Genre: Decodable, Hashable, Sendable, Identifiable {
+struct Genre: Codable, Hashable, Sendable, Identifiable {
     let value: String
     var songCount: Int?
     var albumCount: Int?
@@ -174,7 +174,7 @@ struct AlbumList2: Decodable, PayloadKeyed, Sendable {
     static var payloadKey: String { "albumList2" }
 }
 
-struct AlbumDetail: Decodable, PayloadKeyed, Identifiable, Sendable {
+struct AlbumDetail: Codable, PayloadKeyed, Identifiable, Sendable {
     let id: String
     let name: String
     var artist: String?
@@ -194,7 +194,7 @@ struct AlbumDetail: Decodable, PayloadKeyed, Identifiable, Sendable {
     var hasMultipleDiscs: Bool { Set(songs.map { $0.discNumber ?? 1 }).count > 1 }
 }
 
-struct ArtistIndex: Decodable, Hashable, Sendable, Identifiable {
+struct ArtistIndex: Codable, Hashable, Sendable, Identifiable {
     let name: String
     let artist: [Artist]?
 
@@ -207,7 +207,7 @@ struct ArtistsRoot: Decodable, PayloadKeyed, Sendable {
     static var payloadKey: String { "artists" }
 }
 
-struct ArtistDetail: Decodable, PayloadKeyed, Identifiable, Sendable {
+struct ArtistDetail: Codable, PayloadKeyed, Identifiable, Sendable {
     let id: String
     let name: String
     var coverArt: String?
@@ -233,7 +233,7 @@ struct Playlists: Decodable, PayloadKeyed, Sendable {
     static var payloadKey: String { "playlists" }
 }
 
-struct PlaylistDetail: Decodable, PayloadKeyed, Identifiable, Sendable {
+struct PlaylistDetail: Codable, PayloadKeyed, Identifiable, Sendable {
     let id: String
     let name: String
     var comment: String?
@@ -259,7 +259,7 @@ struct SongsByGenre: Decodable, PayloadKeyed, Sendable {
     static var payloadKey: String { "songsByGenre" }
 }
 
-struct Starred2: Decodable, PayloadKeyed, Sendable {
+struct Starred2: Codable, PayloadKeyed, Sendable {
     var song: [Song]?
     var album: [Album]?
     var artist: [Artist]?
@@ -276,7 +276,7 @@ struct RandomSongs: Decodable, PayloadKeyed, Sendable {
     static var payloadKey: String { "randomSongs" }
 }
 
-struct SearchResult3: Decodable, PayloadKeyed, Sendable {
+struct SearchResult3: Codable, PayloadKeyed, Sendable {
     var artist: [Artist]?
     var album: [Album]?
     var song: [Song]?
@@ -312,7 +312,7 @@ struct StructuredLyrics: Codable, Hashable, Sendable {
 }
 
 /// The server's copy of the play queue, shared by every client on this account.
-struct SavedQueue: Decodable, PayloadKeyed, Sendable {
+struct SavedQueue: Codable, PayloadKeyed, Sendable {
     var entry: [Song]?
     /// Song id of the track that was playing.
     var current: String?
@@ -351,7 +351,7 @@ enum ServerDate {
     }
 }
 
-struct ScanStatus: Decodable, PayloadKeyed, Sendable {
+struct ScanStatus: Codable, PayloadKeyed, Sendable {
     var scanning: Bool
     var count: Int?
     var folderCount: Int?

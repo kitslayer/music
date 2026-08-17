@@ -146,11 +146,14 @@ struct AlbumDetailView: View {
     }
 
     private func load() async {
-        do {
-            detail = try await appState.client.albumDetail(id: album.id)
+        let id = album.id
+        if let cached: AlbumDetail = await appState.cached(CacheKey.album(id), {
+            [client = appState.client] in try await client.albumDetail(id: id)
+        }) {
+            detail = cached
             error = nil
-        } catch {
-            self.error = error.localizedDescription
+        } else {
+            error = "Could not load this album, and there is no saved copy."
         }
     }
 }

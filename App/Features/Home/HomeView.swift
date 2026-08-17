@@ -32,6 +32,7 @@ struct HomeView: View {
             }
             .navigationTitle("Home")
             .musicDestinations()
+            .offlineBanner()
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {

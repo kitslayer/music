@@ -21,6 +21,8 @@ enum Paths {
     /// One file per pending server mutation.
     static let outbox = root.appendingPathComponent("Outbox", isDirectory: true)
     static let lyrics = root.appendingPathComponent("Lyrics", isDirectory: true)
+    /// Last-known library metadata, so the normal screens work offline.
+    static let metadata = root.appendingPathComponent("Metadata", isDirectory: true)
 
     static let catalog = root.appendingPathComponent("catalog.json")
     static let queue = root.appendingPathComponent("queue.json")
@@ -31,7 +33,7 @@ enum Paths {
     /// download session's delegate can fire before any UI exists. The exclusion flag
     /// is re-applied every launch: it is lost whenever a directory is recreated.
     static func bootstrap() {
-        for directory in [root, media, incoming, artwork, outbox, lyrics] {
+        for directory in [root, media, incoming, artwork, outbox, lyrics, metadata] {
             try? FileManager.default.createDirectory(
                 at: directory,
                 withIntermediateDirectories: true

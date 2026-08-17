@@ -116,10 +116,24 @@ final class PlaybackController {
             return MediaLocation(url: local, mimeType: nil, isLocal: true)
         }
 
-        // Always `raw`: a transcoded response is chunked with no Content-Length and no
-        // byte ranges, which breaks seeking.
-        guard let signer = appState.signer,
-              let url = signer.url("stream.view", ["format": "raw", "id": song.id])
+        guard let signer = appState.signer else { return nil }
+
+        // AVFoundation has no Vorbis or Opus decoder, so those containers must be
+        // transcoded by the server or they simply fail with no explanation. Verified:
+        // `format=mp3` returns `audio/mpeg`, but **chunked with no Content-Length**, so
+        // seeking within those tracks is unreliable. Playing without reliable scrubbing
+        // beats not playing, and it affects 11 files out of 25,784.
+        if Self.needsTranscode(song.suffix) {
+            guard let url = signer.url(
+                "stream.view",
+                ["format": "mp3", "id": song.id, "maxBitRate": "320"]
+            ) else { return nil }
+            return MediaLocation(url: url, mimeType: "audio/mpeg", isLocal: false)
+        }
+
+        // Otherwise always `raw`: a transcoded response is chunked with no
+        // Content-Length and no byte ranges, which breaks seeking.
+        guard let url = signer.url("stream.view", ["format": "raw", "id": song.id])
         else { return nil }
 
         return MediaLocation(
@@ -401,6 +415,13 @@ final class PlaybackController {
     /// Keeps the preload window topped up without disturbing what is playing.
     private func refillWindow() {
         output.updateUpcoming(queue.upcoming(windowSize - 1))
+    }
+
+    /// Containers iOS cannot decode natively. Kept explicit rather than inverted from
+    /// a supported list, so a container that merely lacks a MIME mapping is not
+    /// needlessly transcoded.
+    static func needsTranscode(_ suffix: String?) -> Bool {
+        ["ogg", "oga", "opus", "wma", "ape", "wv"].contains(suffix?.lowercased() ?? "")
     }
 
     private static func mimeType(for suffix: String?) -> String? {

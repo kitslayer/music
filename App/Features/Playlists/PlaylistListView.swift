@@ -261,6 +261,9 @@ struct PlaylistDetailView: View {
     }
 
     private func load() async {
-        detail = try? await appState.client.playlistDetail(id: playlist.id)
+        let id = playlist.id
+        detail = await appState.cached(CacheKey.playlist(id)) { [client = appState.client] in
+            try await client.playlistDetail(id: id)
+        }
     }
 }

@@ -15,6 +15,19 @@ permissions:
     contents: write
 
 jobs:
+    # Runs first and independently of the app build: pure logic, `swift test`, no
+    # simulator. This is the only automated check in the project -- everything else is
+    # verified by hand on the device -- so it must not depend on Xcode project state.
+    test:
+        runs-on: macos-26
+        timeout-minutes: 15
+
+        steps:
+            - uses: actions/checkout@v5
+
+            - name: Test the pure logic
+              run: swift test --disable-sandbox
+
     build:
         runs-on: macos-26
         timeout-minutes: 30

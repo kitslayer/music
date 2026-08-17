@@ -38,6 +38,7 @@ struct SearchView: View {
             }
             .navigationTitle("Search")
             .musicDestinations()
+            .offlineBanner()
             .searchable(
                 text: $query,
                 placement: .navigationBarDrawer(displayMode: .always),

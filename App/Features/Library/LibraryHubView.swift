@@ -71,6 +71,7 @@ struct LibraryHubView: View {
             .listSectionSpacing(.compact)
             .navigationTitle("Library")
             .musicDestinations()
+            .offlineBanner()
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { LibraryScopeMenu() }
             }

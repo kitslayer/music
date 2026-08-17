@@ -22,9 +22,11 @@ final class PlaylistStore {
     var lastMessage: String?
 
     private weak var client: SubsonicClient?
+    private weak var appState: AppState?
 
-    func configure(client: SubsonicClient) {
+    func configure(client: SubsonicClient, appState: AppState) {
         self.client = client
+        self.appState = appState
     }
 
     func reset() {
@@ -33,10 +35,16 @@ final class PlaylistStore {
     }
 
     func load() async {
-        guard let client else { return }
+        guard let client, let appState else { return }
         isLoading = true
-        if let fetched = try? await client.playlists() {
-            playlists = fetched.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        // Cached, so the list is there offline. The tracks themselves are too, because
+        // playlists are kept downloaded by default.
+        if let fetched: [Playlist] = await appState.cached(CacheKey.playlists, {
+            try await client.playlists()
+        }) {
+            playlists = fetched.sorted {
+                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            }
         }
         isLoading = false
     }

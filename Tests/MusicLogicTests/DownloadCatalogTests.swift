@@ -1,0 +1,142 @@
+import Foundation
+import Testing
+
+@testable import MusicLogic
+
+/// `reconcile()` exists to survive a kill in the window between the delegate moving a
+/// finished file and the catalog recording it. That window is unreachable in normal use,
+/// so a test is the only way it ever gets exercised.
+struct DownloadCatalogTests {
+    private func song(_ id: String) -> Song {
+        var song = Song(id: id, title: "Track \(id)")
+        song.suffix = "flac"
+        song.size = 1_000
+        return song
+    }
+
+    private func entry(_ id: String, in directory: URL) -> DownloadCatalog.Entry {
+        DownloadCatalog.Entry(
+            song: song(id),
+            filename: "\(id).flac",
+            byteCount: 0,
+            addedAt: .now,
+            groupID: "album1",
+            groupName: "Album"
+        )
+    }
+
+    @Test func catalogRoundTripsThroughJSON() throws {
+        var catalog = DownloadCatalog()
+        catalog.entries["a"] = DownloadCatalog.Entry(
+            song: song("a"), filename: "a.flac", byteCount: 2_048,
+            addedAt: .now, groupID: "g", groupName: "Group"
+        )
+
+        let data = try JSONEncoder().encode(catalog)
+        let restored = try JSONDecoder().decode(DownloadCatalog.self, from: data)
+
+        #expect(restored.version == DownloadCatalog.currentVersion)
+        #expect(restored.entries["a"]?.song.title == "Track a")
+        #expect(restored.totalBytes == 2_048)
+    }
+
+    @Test func totalBytesIgnoresPendingEntries() {
+        var catalog = DownloadCatalog()
+        catalog.entries["a"] = DownloadCatalog.Entry(
+            song: song("a"), filename: "a.flac", byteCount: 100, addedAt: .now,
+            groupID: nil, groupName: nil
+        )
+        catalog.pending["b"] = DownloadCatalog.Entry(
+            song: song("b"), filename: "b.flac", byteCount: 999, addedAt: .now,
+            groupID: nil, groupName: nil
+        )
+        // Only what is actually on disk counts toward the size shown to the user.
+        #expect(catalog.totalBytes == 100)
+    }
+
+    /// A version from a future build is discarded rather than half-decoded: the audio on
+    /// disk is the real data and `reconcile` can re-adopt it.
+    @Test func aFutureVersionIsDiscarded() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let file = directory.appendingPathComponent("catalog.json")
+        let future = #"{"version":9999,"entries":{},"pending":{}}"#
+        try Data(future.utf8).write(to: file)
+
+        let store = DownloadCatalogStore(url: file)
+        let loaded = await store.load()
+        #expect(loaded.version == DownloadCatalog.currentVersion)
+        #expect(loaded.entries.isEmpty)
+    }
+
+    @Test func corruptCatalogDoesNotThrowAndStartsClean() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let file = directory.appendingPathComponent("catalog.json")
+        try Data("not json at all".utf8).write(to: file)
+
+        let store = DownloadCatalogStore(url: file)
+        let loaded = await store.load()
+        #expect(loaded.entries.isEmpty)
+    }
+
+    @Test func completePromotesPendingAndRecordsTheRealSize() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = DownloadCatalogStore(url: directory.appendingPathComponent("c.json"))
+        _ = await store.markPending(entry("a", in: directory))
+
+        let after = await store.complete(songID: "a", byteCount: 4_096)
+        #expect(after.pending["a"] == nil)
+        #expect(after.entries["a"]?.byteCount == 4_096)
+    }
+
+    @Test func cancellingPendingLeavesNothingBehind() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = DownloadCatalogStore(url: directory.appendingPathComponent("c.json"))
+        _ = await store.markPending(entry("a", in: directory))
+        let after = await store.cancelPending(songID: "a")
+
+        #expect(after.pending.isEmpty)
+        #expect(after.entries.isEmpty)
+    }
+
+    @Test func completingSomethingNeverStartedIsANoOp() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = DownloadCatalogStore(url: directory.appendingPathComponent("c.json"))
+        let after = await store.complete(songID: "ghost", byteCount: 10)
+        #expect(after.entries.isEmpty)
+    }
+
+    private func makeTemporaryDirectory() throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("music-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+}
+
+/// Formatting is small but it is on screen constantly, and the duration helpers had
+/// off-by-one potential around the minute boundary.
+struct FormattingTests {
+    @Test func durationsFormatAsMinutesAndSeconds() {
+        #expect(0.asDuration == "0:00")
+        #expect(59.asDuration == "0:59")
+        #expect(60.asDuration == "1:00")
+        #expect(61.asDuration == "1:01")
+        #expect(3_599.asDuration == "59:59")
+    }
+
+    @Test func longDurationsReadInHoursWhenTheyShould() {
+        // A 292-track playlist is hours long, and "1234:56" is not a readable figure.
+        #expect(3_600.asLongDuration.isEmpty == false)
+        #expect(120.asLongDuration.isEmpty == false)
+    }
+}

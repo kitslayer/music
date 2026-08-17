@@ -104,11 +104,18 @@ final class DownloadCenter {
         guard !wanted.isEmpty, let signer = appState?.signer else { return }
 
         for song in wanted {
-            // Original bytes, always: `download.view` never transcodes, where
-            // `stream.view` may, depending on server-side per-player settings.
-            guard let url = signer.url("download.view", ["id": song.id]) else { continue }
+            // Original bytes, always -- except for containers iOS cannot decode, which
+            // would otherwise land on disk as a perfect copy of something unplayable.
+            // Those are fetched transcoded, and the stored extension has to match the
+            // bytes or AVFoundation picks the wrong decoder.
+            let transcode = PlaybackController.needsTranscode(song.suffix)
+            let endpoint = transcode ? "stream.view" : "download.view"
+            let query: [String: String] = transcode
+                ? ["id": song.id, "format": "mp3", "maxBitRate": "320"]
+                : ["id": song.id]
+            guard let url = signer.url(endpoint, query) else { continue }
 
-            let suffix = song.suffix ?? "mp3"
+            let suffix = transcode ? "mp3" : (song.suffix ?? "mp3")
             let entry = DownloadCatalog.Entry(
                 song: song,
                 filename: "\(song.id).\(suffix)",

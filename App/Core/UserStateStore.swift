@@ -20,15 +20,23 @@ final class UserStateStore {
     private var ratingOverrides: [String: Int] = [:]
 
     private weak var client: SubsonicClient?
+    private var outbox: ServerOutbox?
 
-    func configure(client: SubsonicClient) {
+    func configure(client: SubsonicClient, outbox: ServerOutbox) {
         self.client = client
+        self.outbox = outbox
     }
 
     /// Cleared on sign-out; otherwise it would leak one account's stars into another.
     func reset() {
         starOverrides.removeAll()
         ratingOverrides.removeAll()
+    }
+
+    /// Adopts the server's own answer once it is reachable again, so an override that
+    /// has since been replayed stops shadowing the real value.
+    func adopt(starred: Set<String>) {
+        for id in starred { starOverrides[id] = true }
     }
 
     // MARK: - Reading
@@ -72,9 +80,13 @@ final class UserStateStore {
                     try await client.unstar(id: id, kind: kind)
                 }
             } catch {
-                // Put it back rather than leaving the UI asserting something the
-                // server does not agree with.
-                self?.starOverrides[id] = currentlyStarred
+                // Offline, or the server is down. Reverting would be wrong here: the
+                // user's intent is not in doubt, only the delivery. So the override
+                // stays and the change goes to the outbox to be replayed -- the same
+                // treatment plays get, for the same reason.
+                await self?.outbox?.enqueueStar(
+                    id: id, target: kind.parameterName, starred: wanted
+                )
             }
         }
     }
@@ -102,7 +114,7 @@ final class UserStateStore {
             do {
                 try await client.setRating(id: id, rating: wanted)
             } catch {
-                self?.ratingOverrides[id] = current
+                await self?.outbox?.enqueueRating(id: id, rating: wanted)
             }
         }
     }

@@ -18,6 +18,8 @@ final class AppState {
     /// Synchronous URL builder for media endpoints, held here so the player and the
     /// artwork cache can build URLs without awaiting the client actor.
     private(set) var signer: SubsonicSigner?
+    /// True when the last library fetch fell back to disk. Drives the offline banner.
+    var isShowingCachedData = false
 
     let client = SubsonicClient()
     let artwork = ArtworkStore()
@@ -27,6 +29,7 @@ final class AppState {
     let requests = MusicRequestService()
     let queueSync = QueueSync()
     let playlistSync = PlaylistSync()
+    let cache = LibraryCache()
     let downloads = DownloadCenter()
     let reachability = Reachability()
     let outbox = ServerOutbox()
@@ -44,8 +47,8 @@ final class AppState {
         // Directories must exist before anything touches disk, and before a
         // background download session can be relaunched into.
         Paths.bootstrap()
-        userState.configure(client: client)
-        playlistStore.configure(client: client)
+        userState.configure(client: client, outbox: outbox)
+        playlistStore.configure(client: client, appState: self)
         requests.configure(client: client)
         queueSync.configure(client: client)
         playlistSync.configure(
@@ -150,6 +153,20 @@ final class AppState {
     func flushOutbox() async {
         guard credentials != nil else { return }
         _ = await outbox.flush(using: client)
+    }
+
+    /// Fetch-with-fallback, used by every library screen. Online the server always wins,
+    /// because stars and play counts also change from the desktop client; the cache is
+    /// only ever consulted when the alternative is an empty screen.
+    func cached<T: Codable & Sendable>(
+        _ key: String,
+        _ fetch: @escaping @Sendable () async throws -> T
+    ) async -> T? {
+        let (value, isStale) = await cache.value(for: key, fetch: fetch)
+        // One place decides whether the app is offline, rather than each screen
+        // guessing from its own failed request.
+        isShowingCachedData = isStale && value != nil
+        return value
     }
 
     /// Adopts a queue saved by another client, at its position, **paused**. Resuming

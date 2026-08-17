@@ -596,6 +596,17 @@ actor SubsonicClient {
     enum StarKind: Sendable {
         case song, album, artist
 
+        /// Stable name for persistence. Distinct from `parameter`, which is the query
+        /// key the API wants -- those must not be conflated, because renaming one to
+        /// suit the other would silently break stored outbox entries.
+        var parameterName: String {
+            switch self {
+            case .song: return "song"
+            case .album: return "album"
+            case .artist: return "artist"
+            }
+        }
+
         var parameter: String {
             switch self {
             case .song: return "id"
