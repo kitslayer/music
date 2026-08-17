@@ -66,14 +66,16 @@ struct CollectionDownloadButton: View {
         }
     }
 
-    private enum State {
+    /// Not named `State`: a nested type by that name shadows SwiftUI's `@State`
+    /// throughout the type, and the resulting errors point everywhere but here.
+    private enum Progress {
         case none
         case working(fraction: Double)
         case partial(done: Int, total: Int)
         case complete
     }
 
-    private var state: State {
+    private var state: Progress {
         guard !songs.isEmpty else { return .none }
 
         var downloaded = 0

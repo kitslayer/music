@@ -28,10 +28,10 @@ final class Reachability {
 
             Task { @MainActor in
                 guard let self else { return }
-                let wasOnline = isOnline
-                isOnline = online
-                isExpensive = expensive
-                if online, !wasOnline { onCameOnline?() }
+                let wasOnline = self.isOnline
+                self.isOnline = online
+                self.isExpensive = expensive
+                if online, !wasOnline { self.onCameOnline?() }
             }
         }
         monitor.start(queue: .global(qos: .utility))
