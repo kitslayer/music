@@ -1,0 +1,26 @@
+import Foundation
+
+/// Lyrics cached beside downloaded audio.
+///
+/// Fetched when a track is downloaded rather than when it is first played, because
+/// offline is precisely when they cannot be fetched — and a downloaded album that
+/// loses its lyrics on the train is exactly the kind of half-measure this app is
+/// meant to avoid.
+///
+/// A singleton, unusually for this codebase, because the download center reaches it
+/// from a background relaunch where no `AppState` may exist yet.
+actor LyricsStore {
+    static let shared = LyricsStore()
+
+    func save(_ sets: [StructuredLyrics], for songID: String) {
+        guard !sets.isEmpty, let data = try? JSONEncoder().encode(sets) else { return }
+        try? data.write(to: Paths.lyricsFile(songID: songID), options: .atomic)
+    }
+
+    func load(songID: String) -> [StructuredLyrics]? {
+        guard let data = try? Data(contentsOf: Paths.lyricsFile(songID: songID)),
+              let sets = try? JSONDecoder().decode([StructuredLyrics].self, from: data)
+        else { return nil }
+        return sets
+    }
+}

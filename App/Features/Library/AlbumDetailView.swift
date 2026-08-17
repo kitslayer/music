@@ -36,6 +36,11 @@ struct AlbumDetailView: View {
         .collapsingTitle(album.name)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
+                CollectionDownloadButton(
+                    songs: songs, groupID: album.id, groupName: album.name
+                )
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 FavoriteButton(
                     id: album.id,
                     kind: .album,

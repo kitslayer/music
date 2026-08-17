@@ -146,7 +146,13 @@ struct LyricsView: View {
         activeIndex = nil
         resumeAutoScrollAt = nil
 
-        let sets = (try? await appState.client.lyrics(songID: song.id)) ?? []
+        // Disk first: for a downloaded track it is already there, and it removes a
+        // request plus a visible delay on every track change.
+        var sets = await LyricsStore.shared.load(songID: song.id) ?? []
+
+        if sets.isEmpty {
+            sets = (try? await appState.client.lyrics(songID: song.id)) ?? []
+        }
         guard !Task.isCancelled else { return }
 
         // Prefer a synced set, then one matching the device language.

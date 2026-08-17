@@ -2,6 +2,9 @@ import SwiftUI
 
 @main
 struct MusicApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @Environment(\.scenePhase) private var scenePhase
+
     @State private var appState = AppState()
 
     var body: some Scene {
@@ -11,8 +14,24 @@ struct MusicApp: App {
                 .environment(appState.artwork)
                 .environment(appState.scope)
                 .environment(appState.userState)
+                .environment(appState.downloads)
+                .environment(appState.reachability)
                 .preferredColorScheme(.dark)
                 .tint(.appTint)
+                .onChange(of: scenePhase) { _, phase in
+                    switch phase {
+                    case .active:
+                        // Coming back is the most likely moment to have a network
+                        // again after listening offline.
+                        Task { await appState.flushOutbox() }
+                    case .background:
+                        // Backgrounding does not kill the app while audio plays, but
+                        // termination while paused is common and silent.
+                        appState.player.persistNow()
+                    default:
+                        break
+                    }
+                }
         }
     }
 }

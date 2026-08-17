@@ -7,6 +7,7 @@ import SwiftUI
 struct SongMenu: View {
     @Environment(AppState.self) private var appState
     @Environment(UserStateStore.self) private var userState
+    @Environment(DownloadCenter.self) private var downloads
 
     let song: Song
     /// Present only where "go to album/artist" would navigate somewhere you already
@@ -20,6 +21,23 @@ struct SongMenu: View {
 
         Button("Add to Queue", systemImage: "text.append") {
             appState.player.append([song])
+        }
+
+        Divider()
+
+        switch downloads.status(for: song.id) {
+        case .none:
+            Button("Download", systemImage: "arrow.down.circle") {
+                downloads.download([song])
+            }
+        case .waiting, .downloading:
+            Button("Cancel Download", systemImage: "xmark.circle") {
+                downloads.remove([song.id])
+            }
+        case .downloaded:
+            Button("Remove Download", systemImage: "trash", role: .destructive) {
+                downloads.remove([song.id])
+            }
         }
 
         Divider()
@@ -166,6 +184,7 @@ extension View {
 private struct AlbumFavoriteModifier: ViewModifier {
     @Environment(UserStateStore.self) private var userState
     @Environment(AppState.self) private var appState
+    @Environment(DownloadCenter.self) private var downloads
 
     let album: Album
     let includesSwipe: Bool
@@ -188,6 +207,9 @@ private struct AlbumFavoriteModifier: ViewModifier {
                 Button("Shuffle", systemImage: "shuffle") {
                     playAlbum(shuffled: true)
                 }
+                Button("Download", systemImage: "arrow.down.circle") {
+                    downloadAlbum()
+                }
                 Divider()
                 Button(
                     starred ? "Remove Favourite" : "Favourite",
@@ -196,6 +218,15 @@ private struct AlbumFavoriteModifier: ViewModifier {
                     userState.toggleStar(album)
                 }
             }
+    }
+
+    /// The album has to be fetched first: a row only carries the album, not its
+    /// tracks, and the download is per song.
+    private func downloadAlbum() {
+        Task {
+            guard let detail = try? await appState.client.albumDetail(id: album.id) else { return }
+            downloads.download(detail.songs, groupID: album.id, groupName: album.name)
+        }
     }
 
     private func playAlbum(shuffled: Bool) {

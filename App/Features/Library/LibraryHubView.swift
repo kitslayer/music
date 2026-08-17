@@ -5,6 +5,7 @@ import SwiftUI
 struct LibraryHubView: View {
     @Environment(AppState.self) private var appState
     @Environment(LibraryScopeStore.self) private var scope
+    @Environment(DownloadCenter.self) private var downloads
 
     @State private var recentlyAdded: [Album] = []
 
@@ -22,7 +23,16 @@ struct LibraryHubView: View {
                     row("Albums", "square.stack", .albums(.alphabeticalByName))
                     row("Genres", "guitars", .genres)
                     row("Favourites", "star", .favorites)
-                    row("Downloads", "arrow.down.circle", .downloads)
+                    // The one row whose contents live on this phone, so it is the
+                    // one row where a count says something the screen does not.
+                    row(
+                        "Downloads",
+                        "arrow.down.circle",
+                        .downloads,
+                        badge: downloads.catalog.entries.isEmpty
+                            ? nil
+                            : "\(downloads.catalog.entries.count)"
+                    )
                 }
 
                 if !recentlyAdded.isEmpty {
@@ -70,7 +80,12 @@ struct LibraryHubView: View {
         }
     }
 
-    private func row(_ title: String, _ symbol: String, _ destination: Destination) -> some View {
+    private func row(
+        _ title: String,
+        _ symbol: String,
+        _ destination: Destination,
+        badge: String? = nil
+    ) -> some View {
         NavigationLink(value: destination) {
             Label {
                 Text(title)
@@ -81,6 +96,7 @@ struct LibraryHubView: View {
                     .frame(width: 28, alignment: .center)
             }
         }
+        .badge(badge)
         .frame(minHeight: Metrics.rowCategory)
     }
 }

@@ -211,13 +211,27 @@ final class PlaybackController {
     // MARK: - Scrobbling
 
     private func report(_ event: PlayTracker.Event, submission: Bool) {
-        guard let client = appState?.client else { return }
+        guard let appState else { return }
+
+        guard submission else {
+            // "Now playing" is ephemeral -- it expires on the server in minutes, so
+            // queueing a stale one would be worse than losing it.
+            Task { try? await appState.client.scrobble(id: event.songID, submission: false) }
+            return
+        }
+
         Task {
-            try? await client.scrobble(
-                id: event.songID,
-                submission: submission,
-                at: submission ? event.listenedAt : nil
-            )
+            do {
+                try await appState.client.scrobble(
+                    id: event.songID, submission: true, at: event.listenedAt
+                )
+            } catch {
+                // Offline, or the server is down. The play is owed either way, so it
+                // goes to disk with the time it actually happened.
+                await appState.outbox.enqueue(
+                    songID: event.songID, listenedAt: event.listenedAt
+                )
+            }
         }
     }
 
@@ -282,19 +296,30 @@ final class PlaybackController {
     }
 
     private func makeItem(for song: Song) -> AVPlayerItem? {
-        guard let appState, let signer = appState.signer else { return nil }
+        guard let appState else { return nil }
 
         var options: [String: Any] = [:]
-        // `stream.view` has no path extension, so AVFoundation has nothing to sniff
-        // and FLAC fails to pick a decoder. Override the type explicitly.
-        if let mime = song.contentType ?? Self.mimeType(for: song.suffix) {
-            options[AVURLAssetOverrideMIMETypeKey] = mime
-        }
 
-        // Always `raw`: a transcoded response is chunked with no Content-Length and
-        // no byte ranges, which breaks seeking.
-        guard let url = signer.url("stream.view", ["format": "raw", "id": song.id]) else {
-            return nil
+        // A downloaded file wins over the network unconditionally: it is the original
+        // bytes, it is instant, and it works with the server switched off. This is the
+        // whole reason downloads exist, so it is checked before anything else.
+        let url: URL
+        if let local = appState.downloads.localURL(for: song.id) {
+            url = local
+        } else {
+            guard let signer = appState.signer,
+                  // Always `raw`: a transcoded response is chunked with no
+                  // Content-Length and no byte ranges, which breaks seeking.
+                  let streamURL = signer.url("stream.view", ["format": "raw", "id": song.id])
+            else { return nil }
+            url = streamURL
+
+            // `stream.view` has no path extension, so AVFoundation has nothing to
+            // sniff and FLAC fails to pick a decoder. Override the type explicitly.
+            // A local file has its extension, so this is only needed when streaming.
+            if let mime = song.contentType ?? Self.mimeType(for: song.suffix) {
+                options[AVURLAssetOverrideMIMETypeKey] = mime
+            }
         }
 
         let asset = AVURLAsset(url: url, options: options)

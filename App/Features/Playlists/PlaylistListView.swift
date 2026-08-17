@@ -93,6 +93,13 @@ struct PlaylistDetailView: View {
         }
         .listStyle(.plain)
         .collapsingTitle(playlist.name)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                CollectionDownloadButton(
+                    songs: songs, groupID: playlist.id, groupName: playlist.name
+                )
+            }
+        }
         .task { await load() }
     }
 

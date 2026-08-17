@@ -23,6 +23,9 @@ final class AppState {
     let artwork = ArtworkStore()
     let scope = LibraryScopeStore()
     let userState = UserStateStore()
+    let downloads = DownloadCenter()
+    let reachability = Reachability()
+    let outbox = ServerOutbox()
     let player = PlaybackController()
 
     init() {
@@ -30,7 +33,14 @@ final class AppState {
         // background download session can be relaunched into.
         Paths.bootstrap()
         userState.configure(client: client)
+        downloads.attach(appState: self)
         player.attach(appState: self)
+
+        // Plays recorded while offline reach the server the moment there is one.
+        reachability.onCameOnline = { [weak self] in
+            Task { await self?.flushOutbox() }
+        }
+
         Task { await restore() }
     }
 
@@ -50,6 +60,7 @@ final class AppState {
         phase = .ready
 
         await player.restore()
+        await flushOutbox()
         await loadServerContext()
     }
 
@@ -88,6 +99,13 @@ final class AppState {
         artwork.configure(signer: nil)
         userState.reset()
         phase = .needsSetup
+    }
+
+    /// Called at launch, on foreground, and on regaining a network. Cheap when the
+    /// outbox is empty, which is the normal case.
+    func flushOutbox() async {
+        guard credentials != nil else { return }
+        _ = await outbox.flush(using: client)
     }
 
     /// Best-effort: neither the folder list nor the capability list is worth

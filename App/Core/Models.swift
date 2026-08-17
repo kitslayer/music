@@ -291,8 +291,9 @@ struct LyricsList: Decodable, PayloadKeyed, Sendable {
 }
 
 /// Decoded tolerantly on purpose: the songLyrics v2 extension may add word-level
-/// timing fields, and unknown keys must not break decoding.
-struct StructuredLyrics: Decodable, Hashable, Sendable {
+/// timing fields, and unknown keys must not break decoding. Encodable too, because
+/// lyrics are cached to disk alongside downloaded audio.
+struct StructuredLyrics: Codable, Hashable, Sendable {
     var displayArtist: String?
     var displayTitle: String?
     var lang: String?
@@ -304,7 +305,7 @@ struct StructuredLyrics: Decodable, Hashable, Sendable {
     var lines: [LyricLine] { line ?? [] }
 }
 
-struct LyricLine: Decodable, Hashable, Sendable {
+struct LyricLine: Codable, Hashable, Sendable {
     /// Milliseconds from the start of the track. Absent on unsynced lyrics.
     var start: Int?
     let value: String

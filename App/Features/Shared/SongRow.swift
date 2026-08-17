@@ -33,6 +33,8 @@ struct SongRow: View {
 
             Spacer(minLength: 8)
 
+            DownloadedBadge(songID: song.id)
+
             if userState.isStarred(song) {
                 Image(systemName: "star.fill")
                     .font(.caption)
