@@ -44,13 +44,20 @@ final class AudioSessionCoordinator {
     private func observeNotifications() {
         let center = NotificationCenter.default
 
+        // The raw values are pulled out *before* hopping to the main actor:
+        // `Notification` is not `Sendable`, so it cannot cross the boundary, and the
+        // two `UInt`s are all these handlers ever needed.
         observers.append(center.addObserver(
             forName: AVAudioSession.interruptionNotification,
             object: nil,
             queue: .main
         ) { [weak self] notification in
+            let info = notification.userInfo
+            let rawType = info?[AVAudioSessionInterruptionTypeKey] as? UInt
+            let rawOptions = info?[AVAudioSessionInterruptionOptionKey] as? UInt
+
             MainActor.assumeIsolated {
-                self?.handleInterruption(notification)
+                self?.handleInterruption(rawType: rawType, rawOptions: rawOptions)
             }
         })
 
@@ -59,15 +66,16 @@ final class AudioSessionCoordinator {
             object: nil,
             queue: .main
         ) { [weak self] notification in
+            let rawReason = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
+
             MainActor.assumeIsolated {
-                self?.handleRouteChange(notification)
+                self?.handleRouteChange(rawReason: rawReason)
             }
         })
     }
 
-    private func handleInterruption(_ notification: Notification) {
-        guard let info = notification.userInfo,
-              let rawType = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+    private func handleInterruption(rawType: UInt?, rawOptions: UInt?) {
+        guard let rawType,
               let type = AVAudioSession.InterruptionType(rawValue: rawType)
         else { return }
 
@@ -78,7 +86,7 @@ final class AudioSessionCoordinator {
             onPause?()
 
         case .ended:
-            let options = (info[AVAudioSessionInterruptionOptionKey] as? UInt)
+            let options = rawOptions
                 .map(AVAudioSession.InterruptionOptions.init(rawValue:)) ?? []
 
             guard options.contains(.shouldResume), wasPlayingBeforeInterruption else { return }
@@ -94,9 +102,9 @@ final class AudioSessionCoordinator {
         }
     }
 
-    private func handleRouteChange(_ notification: Notification) {
-        guard let raw = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
-              let reason = AVAudioSession.RouteChangeReason(rawValue: raw)
+    private func handleRouteChange(rawReason: UInt?) {
+        guard let rawReason,
+              let reason = AVAudioSession.RouteChangeReason(rawValue: rawReason)
         else { return }
 
         // Headphones pulled out or an AirPod removed. Never auto-resume when a new

@@ -29,17 +29,14 @@ final class QueuePlayerOutput: AudioOutput {
     /// `AVPlayerItem` is single-use, so this maps the live items back to songs.
     private var itemToSongID: [ObjectIdentifier: String] = [:]
     private var expectedItem: AVPlayerItem?
+    /// Never removed: the observer is owned by the player, which is owned by this
+    /// object, so they are deallocated together. A `deinit` that touched it could not
+    /// be expressed under strict concurrency anyway -- `Any?` is not `Sendable`.
     private var timeObserver: Any?
 
     init() {
         player.actionAtItemEnd = .advance
         addTimeObserver()
-    }
-
-    deinit {
-        if let timeObserver {
-            player.removeTimeObserver(timeObserver)
-        }
     }
 
     // MARK: - Loading
