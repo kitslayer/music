@@ -160,7 +160,18 @@ struct PlaybackQueue: Codable, Sendable {
 
     mutating func remove(atOrderIndex index: Int) {
         guard order.indices.contains(index) else { return }
-        order.remove(at: index)
+        let trackIndex = order.remove(at: index)
+
+        // The track has to leave `tracks` as well, not just the running order.
+        // `unshuffle()` rebuilds the order from `tracks.indices`, so leaving it behind
+        // meant every song removed from the queue came back the moment shuffle was
+        // switched off. Found by a test, not by use.
+        guard tracks.indices.contains(trackIndex) else { return }
+        tracks.remove(at: trackIndex)
+
+        // Every remaining index above the removed one now points one slot too high.
+        order = order.map { $0 > trackIndex ? $0 - 1 : $0 }
+
         if index < position { position -= 1 }
         position = min(position, max(order.count - 1, 0))
     }

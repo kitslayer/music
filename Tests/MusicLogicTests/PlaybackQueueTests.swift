@@ -124,6 +124,41 @@ struct PlaybackQueueTests {
         #expect(queue.current != nil)
     }
 
+    /// The bug this test was written for: `remove` dropped the song from the running
+    /// order but not from `tracks`, and `unshuffle` rebuilds the order from
+    /// `tracks.indices` -- so everything removed came back the moment shuffle was
+    /// turned off.
+    @Test func removedTracksDoNotComeBackWhenShuffleIsTurnedOff() {
+        var queue = PlaybackQueue.make(
+            tracks: songs(6), startingAt: 0, shuffled: true, source: "Album"
+        )
+        let doomed = queue.tracks[queue.order[3]].id
+
+        queue.remove(atOrderIndex: 3)
+        #expect(queue.order.count == 5)
+
+        queue.unshuffle()
+
+        #expect(queue.order.count == 5)
+        #expect(queue.tracks.count == 5)
+        #expect(queue.tracks.contains { $0.id == doomed } == false)
+        // And the order must still be a valid permutation of what is left.
+        #expect(Set(queue.order) == Set(0..<5))
+    }
+
+    @Test func removingSeveralTracksKeepsTheOrderConsistent() {
+        var queue = PlaybackQueue.make(
+            tracks: songs(8), startingAt: 0, shuffled: false, source: "Album"
+        )
+        queue.remove(atOrderIndex: 6)
+        queue.remove(atOrderIndex: 2)
+        queue.remove(atOrderIndex: 0)
+
+        #expect(queue.tracks.count == 5)
+        #expect(Set(queue.order) == Set(0..<5))
+        #expect(queue.current != nil)
+    }
+
     @Test func emptyQueueIsSafeToOperateOn() {
         var queue = PlaybackQueue()
         #expect(queue.current == nil)
