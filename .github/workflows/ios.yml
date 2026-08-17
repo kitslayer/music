@@ -40,6 +40,17 @@ jobs:
                   xcodebuild -version
                   swift --version
 
+            # Written into the plist rather than passed as a build setting: with
+            # GENERATE_INFOPLIST_FILE=NO the plist is copied largely as-is, so an
+            # explicit write is the version that cannot quietly not happen.
+            - name: Stamp the build
+              run: |
+                  BUILD="${{ github.run_number }}"
+                  SHA="$(git rev-parse --short=7 HEAD)"
+                  plutil -replace CFBundleVersion -string "$BUILD" Music-Info.plist
+                  plutil -replace GitCommit -string "$SHA" Music-Info.plist
+                  plutil -p Music-Info.plist | grep -E "CFBundleVersion|GitCommit"
+
             - name: Archive (ad-hoc signed)
               run: |
                   # Ad-hoc rather than unsigned: a binary with no
@@ -93,8 +104,8 @@ jobs:
                   # Notes built in a variable: a literal newline inside the YAML
                   # block scalar has to stay indented, and an unindented
                   # continuation line silently invalidates the whole workflow.
-                  printf 'Ad-hoc signed. Install with `xtool install Music.ipa`.\n\nCommit %s\n' \
-                    "${GITHUB_SHA:0:7}" > "$RUNNER_TEMP/notes.md"
+                  printf 'Ad-hoc signed. Install with `xtool install Music.ipa`.\n\nBuild %s · commit %s\n' \
+                    "${{ github.run_number }}" "${GITHUB_SHA:0:7}" > "$RUNNER_TEMP/notes.md"
                   gh release delete latest --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
 
                   # Retried: the asset upload endpoint returns 503 during GitHub

@@ -107,10 +107,20 @@ struct SettingsView: View {
         return count == 0 ? "None" : "\(count) · \(downloads.catalog.totalBytes.asFileSize)"
     }
 
+    /// Identifies the exact build, which the app previously could not do: the version
+    /// read "1.0 (1)" forever, so there was no way to tell from the phone whether an
+    /// install had actually taken. CI stamps the run number and commit.
     private var version: String {
-        let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
-        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
-        return "\(short) (\(build))"
+        let info = Bundle.main.infoDictionary
+        let short = info?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info?["CFBundleVersion"] as? String ?? "?"
+        let commit = info?["GitCommit"] as? String ?? "local"
+
+        // An unstamped build says so rather than pretending to be a numbered one.
+        if build == "0" || commit == "local" {
+            return "\(short) (local build)"
+        }
+        return "\(short) · build \(build) · \(commit)"
     }
 
     private func test() async {
