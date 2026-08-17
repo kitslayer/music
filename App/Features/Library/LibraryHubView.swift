@@ -33,6 +33,7 @@ struct LibraryHubView: View {
                             ? nil
                             : "\(downloads.catalog.entries.count)"
                     )
+                    row("Settings", "gearshape", .settings)
                 }
 
                 if !recentlyAdded.isEmpty {

@@ -32,6 +32,17 @@ struct SearchView: View {
                 placement: .navigationBarDrawer(displayMode: .always),
                 prompt: "Artists, Albums, Songs"
             )
+            // `.searchScopes` rather than the toolbar menu used elsewhere: it is the
+            // control iOS already puts under a search field, and a second menu beside
+            // the field would be one affordance too many. Same store either way.
+            .searchScopes(
+                Binding(get: { scope.scope }, set: { scope.scope = $0 }),
+                activation: .onSearchPresentation
+            ) {
+                ForEach(scope.options, id: \.self) { option in
+                    Text(option.shortName).tag(option)
+                }
+            }
             .scrollDismissesKeyboard(.immediately)
             .task(id: SearchKey(query: query, scope: scope.generation)) {
                 await search()
