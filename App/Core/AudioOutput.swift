@@ -52,4 +52,10 @@ protocol AudioOutput: AnyObject {
     var onTick: ((_ elapsed: Double, _ isMoving: Bool) -> Void)? { get set }
     /// Where to find a song's bytes. Set by the controller; changes on sign-in.
     var locate: ((Song) -> MediaLocation?)? { get set }
+
+    /// Where to deliver PCM for the visualiser, or nil to stop delivering it. Set only
+    /// while a visualiser is on screen: tapping audio nobody is looking at is wasted
+    /// work, and for the streaming output it also means the tap is not in the path
+    /// during ordinary listening.
+    func setSpectrumSink(_ buffer: AudioSampleBuffer?)
 }

@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum PlayerMode: String, CaseIterable {
-    case artwork, queue, lyrics
+    case artwork, queue, lyrics, visualizer
 }
 
 struct NowPlayingView: View {
@@ -178,6 +178,9 @@ struct NowPlayingView: View {
                 if let song = player.currentSong {
                     LyricsView(song: song)
                 }
+
+            case .visualizer:
+                VisualizerView()
             }
         }
         .animation(.easeInOut(duration: 0.25), value: mode)
@@ -346,23 +349,30 @@ struct NowPlayingView: View {
             Spacer()
             modeButton(.artwork, "photo")
             Spacer()
+            modeButton(.visualizer, "waveform")
+            Spacer()
             modeButton(.queue, "list.bullet")
             Spacer()
             AudioRoutePicker()
                 .frame(width: Metrics.minimumTouchTarget, height: Metrics.minimumTouchTarget)
         }
-        .padding(.horizontal, 32)
+        .padding(.horizontal, 20)
         .padding(.top, 4)
         .padding(.bottom, 4)
     }
 
+    /// Selection is shown by tint and weight, not by swapping in a `.fill` variant.
+    /// Appending ".fill" was a guess that does not hold: `waveform.fill` and
+    /// `list.bullet.fill` are not real symbols, and an unknown name renders as blank.
     private func modeButton(_ target: PlayerMode, _ symbol: String) -> some View {
-        Button {
-            mode = mode == target ? .artwork : target
+        let isSelected = mode == target
+
+        return Button {
+            mode = isSelected ? .artwork : target
         } label: {
-            Image(systemName: mode == target ? "\(symbol).fill" : symbol)
-                .font(.title3)
-                .foregroundStyle(mode == target ? Color.appTint : .white.opacity(0.6))
+            Image(systemName: symbol)
+                .font(.title3.weight(isSelected ? .bold : .regular))
+                .foregroundStyle(isSelected ? Color.appTint : .white.opacity(0.6))
                 .frame(width: Metrics.minimumTouchTarget, height: Metrics.minimumTouchTarget)
         }
     }

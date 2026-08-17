@@ -29,6 +29,7 @@ final class QueuePlayerOutput: AudioOutput {
     /// `AVPlayerItem` is single-use, so this maps the live items back to songs.
     private var itemToSongID: [ObjectIdentifier: String] = [:]
     private var expectedItem: AVPlayerItem?
+    private var spectrum: AudioSampleBuffer?
     /// Never removed: the observer is owned by the player, which is owned by this
     /// object, so they are deallocated together. A `deinit` that touched it could not
     /// be expressed under strict concurrency anyway -- `Any?` is not `Sendable`.
@@ -37,6 +38,33 @@ final class QueuePlayerOutput: AudioOutput {
     init() {
         player.actionAtItemEnd = .advance
         addTimeObserver()
+    }
+
+    /// Attaches or removes the sample tap.
+    ///
+    /// Turning it on also reaches the item already playing, so opening the visualiser
+    /// mid-track shows something immediately instead of waiting for the next one. Track
+    /// loading is async, hence the `Task`; `audioMix` can be set on a playing item.
+    func setSpectrumSink(_ buffer: AudioSampleBuffer?) {
+        spectrum?.markStopped()
+        spectrum = buffer
+
+        guard let buffer else {
+            for item in player.items() { item.audioMix = nil }
+            return
+        }
+
+        if let item = player.currentItem {
+            Task { await attachTap(to: item, feeding: buffer) }
+        }
+    }
+
+    private func attachTap(to item: AVPlayerItem, feeding buffer: AudioSampleBuffer) async {
+        guard item.audioMix == nil,
+              let track = try? await item.asset.loadTracks(withMediaType: .audio).first,
+              let mix = AudioTap.makeMix(for: track, feeding: buffer)
+        else { return }
+        item.audioMix = mix
     }
 
     // MARK: - Loading
@@ -150,6 +178,10 @@ final class QueuePlayerOutput: AudioOutput {
     private func tick(_ time: CMTime) {
         if player.currentItem !== expectedItem {
             expectedItem = player.currentItem
+            // The next track needs its own tap; a mix belongs to one item.
+            if let buffer = spectrum, let item = player.currentItem {
+                Task { await attachTap(to: item, feeding: buffer) }
+            }
             let songID = player.currentItem.flatMap { itemToSongID[ObjectIdentifier($0)] }
             onAdvanced?(songID)
             return

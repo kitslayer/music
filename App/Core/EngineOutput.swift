@@ -56,11 +56,16 @@ final class EngineOutput: AudioOutput {
     /// Frame the current track was scheduled from, so `elapsed` survives a seek.
     private var startFrame: AVAudioFramePosition = 0
     private var sampleRate: Double = 44100
+    /// The rate the fixed links in the graph are wired at. Tracked so a route change
+    /// to hardware running at a different rate can be rewired rather than silently
+    /// resampled twice.
+    private var graphRate: Double = 0
     private var isRunning = false
     private var hasScheduledNext = false
 
     private var ticker: Task<Void, Never>?
     private var fadeTask: Task<Void, Never>?
+    private var spectrum: AudioSampleBuffer?
 
     init(settings: AudioSettings) {
         self.settings = settings
@@ -71,6 +76,24 @@ final class EngineOutput: AudioOutput {
     deinit {
         ticker?.cancel()
         fadeTask?.cancel()
+    }
+
+    /// Cheap here: the engine already has the samples in a tappable graph, so this is
+    /// one block on the mixer rather than the C tap the streaming output needs.
+    func setSpectrumSink(_ buffer: AudioSampleBuffer?) {
+        spectrum?.markStopped()
+        spectrum = buffer
+
+        // Removing first is required -- installing twice on one bus traps.
+        mixer.removeTap(onBus: 0)
+        guard let buffer else { return }
+
+        let format = mixer.outputFormat(forBus: 0)
+        mixer.installTap(onBus: 0, bufferSize: 1024, format: format) { audioBuffer, _ in
+            // Audio thread. One channel, one copy, nothing else.
+            guard let channel = audioBuffer.floatChannelData?[0] else { return }
+            buffer.write(channel, count: Int(audioBuffer.frameLength))
+        }
     }
 
     /// True when every track in the window is a local file, which is the only case
@@ -86,16 +109,7 @@ final class EngineOutput: AudioOutput {
         engine.attach(mixer)
         engine.attach(eq)
         for player in players { engine.attach(player) }
-
-        // A concrete format on the fixed links; the mixer converts each input to it,
-        // which is the whole reason it is in the graph.
-        let format = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 2)
-        engine.connect(mixer, to: eq, format: format)
-        engine.connect(eq, to: engine.mainMixerNode, format: format)
-
-        for (index, player) in players.enumerated() {
-            engine.connect(player, to: mixer, fromBus: 0, toBus: index, format: nil)
-        }
+        connectGraph()
 
         for (index, frequency) in AudioSettings.bandFrequencies.enumerated() {
             let band = eq.bands[index]
@@ -103,6 +117,31 @@ final class EngineOutput: AudioOutput {
             band.frequency = frequency
             band.bandwidth = 1.0
             band.bypass = false
+        }
+    }
+
+    /// Wires the fixed links at the **hardware** sample rate.
+    ///
+    /// This was hardcoded to 44.1 kHz, which quietly resampled every 48 kHz and 96 kHz
+    /// FLAC down to 44.1 and then back up to whatever the hardware wanted -- two
+    /// conversions and a real loss, on a library that is 22,000 lossless files. Running
+    /// the graph at the output rate means the only conversion is the one the OS would
+    /// have done anyway.
+    private func connectGraph() {
+        let sessionRate = AVAudioSession.sharedInstance().sampleRate
+        graphRate = sessionRate > 0 ? sessionRate : 48000
+
+        guard let format = AVAudioFormat(standardFormatWithSampleRate: graphRate, channels: 2)
+        else { return }
+
+        engine.connect(mixer, to: eq, format: format)
+        engine.connect(eq, to: engine.mainMixerNode, format: format)
+
+        // `format: nil` on the inputs is deliberate: each player node adopts its file's
+        // own format and the mixer converts. That is what lets a 96 kHz FLAC follow a
+        // 44.1 kHz MP3 without rebuilding the graph between tracks.
+        for (index, player) in players.enumerated() {
+            engine.connect(player, to: mixer, fromBus: 0, toBus: index, format: nil)
         }
     }
 
@@ -117,6 +156,14 @@ final class EngineOutput: AudioOutput {
 
     private func startEngineIfNeeded() {
         guard !engine.isRunning else { return }
+
+        // Rewire if the hardware moved -- plugging in headphones or switching to
+        // AirPlay can change the output rate, and a stale graph would resample.
+        let sessionRate = AVAudioSession.sharedInstance().sampleRate
+        if sessionRate > 0, abs(sessionRate - graphRate) > 1 {
+            connectGraph()
+        }
+
         engine.prepare()
         do {
             try engine.start()

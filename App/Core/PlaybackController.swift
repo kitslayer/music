@@ -44,6 +44,9 @@ final class PlaybackController {
     private weak var appState: AppState?
 
     private var saveTask: Task<Void, Never>?
+    /// Non-nil while a visualiser is on screen. Held here rather than in the output so
+    /// it survives a switch between outputs mid-track.
+    private var spectrumSink: AudioSampleBuffer?
 
     /// Current + 2 upcoming. Preloading the next item is what makes the boundary
     /// gapless; inserting a 292-track playlist would be a connection stampede.
@@ -121,6 +124,19 @@ final class PlaybackController {
             mimeType: song.contentType ?? Self.mimeType(for: song.suffix),
             isLocal: false
         )
+    }
+
+    // MARK: - Visualiser
+
+    func startSpectrum() {
+        guard let appState else { return }
+        spectrumSink = appState.spectrumBuffer
+        output.setSpectrumSink(spectrumSink)
+    }
+
+    func stopSpectrum() {
+        output.setSpectrumSink(nil)
+        spectrumSink = nil
     }
 
     /// Called when the EQ or crossfade settings change. Reloads at the current
@@ -341,8 +357,12 @@ final class PlaybackController {
 
         let wanted = desiredOutput(for: window)
         if wanted !== output {
+            output.setSpectrumSink(nil)
             output.stop()
             output = wanted
+            // The visualiser must follow the switch, or opening it on a streamed track
+            // and then reaching a downloaded one would silently go flat.
+            output.setSpectrumSink(spectrumSink)
         }
 
         output.load(window: window, startAt: seconds)
