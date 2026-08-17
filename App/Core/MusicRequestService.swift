@@ -72,7 +72,7 @@ final class MusicRequestService {
     private weak var client: SubsonicClient?
 
     var isConfigured: Bool { configuration != nil }
-    var isWatchingAnything: Bool { history.contains(\.isWatching) }
+    var isWatchingAnything: Bool { history.contains(where: \.isWatching) }
 
     func configure(client: SubsonicClient) {
         self.client = client
