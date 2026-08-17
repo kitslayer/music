@@ -14,6 +14,7 @@ enum Destination: Hashable {
     case favorites
     case downloads
     case settings
+    case audioSettings
 }
 
 extension View {
@@ -47,6 +48,8 @@ extension View {
                 DownloadsView()
             case .settings:
                 SettingsView()
+            case .audioSettings:
+                AudioSettingsView()
             }
         }
     }

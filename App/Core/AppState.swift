@@ -27,6 +27,7 @@ final class AppState {
     let reachability = Reachability()
     let outbox = ServerOutbox()
     let sleepTimer = SleepTimer()
+    let audio = AudioSettings()
     let player = PlaybackController()
 
     init() {
@@ -39,6 +40,10 @@ final class AppState {
 
         sleepTimer.onFire = { [weak self] in
             self?.player.fadeOutAndPause()
+        }
+
+        audio.onChange = { [weak self] in
+            self?.player.audioSettingsChanged()
         }
 
         // Plays recorded while offline reach the server the moment there is one.

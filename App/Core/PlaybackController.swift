@@ -6,9 +6,14 @@ import UIKit
 
 /// Everything the UI talks to for playback.
 ///
-/// `@MainActor` rather than an actor: `AVQueuePlayer`, `MPNowPlayingInfoCenter` and
-/// `UIImage` are all main-thread-affine and non-`Sendable`, so actor isolation would
-/// mean an unsafe opt-out plus a hop on every remote command and time tick.
+/// Owns the queue, the play tracker, the lock screen and persistence. It does **not**
+/// own the sound: that is an `AudioOutput`, chosen per track window, so the EQ engine
+/// and the streaming player are interchangeable without any of the above moving.
+///
+/// `@MainActor` rather than an actor: `AVQueuePlayer`, `AVAudioEngine`,
+/// `MPNowPlayingInfoCenter` and `UIImage` are all main-thread-affine and
+/// non-`Sendable`, so actor isolation would mean an unsafe opt-out plus a hop on every
+/// remote command and time tick.
 @MainActor
 @Observable
 final class PlaybackController {
@@ -26,17 +31,18 @@ final class PlaybackController {
 
     // MARK: - Dependencies
 
-    private let player = AVQueuePlayer()
+    /// The default sound path, and the only one that can stream.
+    private let queueOutput = QueuePlayerOutput()
+    /// Built once `AppState` exists, because it needs the EQ settings.
+    private var engineOutput: EngineOutput?
+    private var output: AudioOutput
+
     private let session = AudioSessionCoordinator()
     private let nowPlaying = NowPlayingCenter()
     private let store = PlaybackQueueStore(url: Paths.queue)
     private let tracker = PlayTracker()
     private weak var appState: AppState?
 
-    /// AVPlayerItem is single-use, so this maps the live items back to songs.
-    private var itemToSongID: [ObjectIdentifier: String] = [:]
-    private var expectedItem: AVPlayerItem?
-    private var timeObserver: Any?
     private var saveTask: Task<Void, Never>?
 
     /// Current + 2 upcoming. Preloading the next item is what makes the boundary
@@ -44,7 +50,7 @@ final class PlaybackController {
     private let windowSize = 3
 
     init() {
-        player.actionAtItemEnd = .advance
+        output = queueOutput
         session.configure()
 
         session.onPause = { [weak self] in self?.pause() }
@@ -67,11 +73,66 @@ final class PlaybackController {
             self?.report(event, submission: true)
         }
 
-        addTimeObserver()
+        wire(queueOutput)
     }
 
     func attach(appState: AppState) {
         self.appState = appState
+
+        let engine = EngineOutput(settings: appState.audio)
+        engineOutput = engine
+        wire(engine)
+
+        queueOutput.locate = { [weak self] song in self?.locate(song) }
+        engine.locate = { [weak self] song in self?.locate(song) }
+    }
+
+    /// Both outputs are wired up front rather than on switch: a callback arriving from
+    /// an output that has just been stopped is normal, and re-wiring on every switch
+    /// would be one more place to get it wrong.
+    private func wire(_ candidate: AudioOutput) {
+        candidate.onAdvanced = { [weak self, weak candidate] songID in
+            guard let self, let candidate, candidate === output else { return }
+            handleAdvanced(to: songID)
+        }
+        candidate.onTick = { [weak self, weak candidate] elapsed, isMoving in
+            guard let self, let candidate, candidate === output else { return }
+            tick(elapsed: elapsed, isMoving: isMoving)
+        }
+    }
+
+    /// Where a song's bytes are. A completed download wins over the network
+    /// unconditionally: original bytes, instant, and works with the server off.
+    private func locate(_ song: Song) -> MediaLocation? {
+        guard let appState else { return nil }
+
+        if let local = appState.downloads.localURL(for: song.id) {
+            return MediaLocation(url: local, mimeType: nil, isLocal: true)
+        }
+
+        // Always `raw`: a transcoded response is chunked with no Content-Length and no
+        // byte ranges, which breaks seeking.
+        guard let signer = appState.signer,
+              let url = signer.url("stream.view", ["format": "raw", "id": song.id])
+        else { return nil }
+
+        return MediaLocation(
+            url: url,
+            mimeType: song.contentType ?? Self.mimeType(for: song.suffix),
+            isLocal: false
+        )
+    }
+
+    /// Called when the EQ or crossfade settings change. Reloads at the current
+    /// position only if the *choice* of output changed, so moving a slider does not
+    /// interrupt the music.
+    func audioSettingsChanged() {
+        engineOutput?.applyEQ()
+
+        guard hasQueue else { return }
+        let window = currentWindow
+        guard desiredOutput(for: window) !== output else { return }
+        rebuildOutput(startPlaying: isPlaying, seekTo: elapsed)
     }
 
     // MARK: - Starting playback
@@ -87,7 +148,7 @@ final class PlaybackController {
             repeatMode: queue.repeatMode
         )
 
-        rebuildPlayerItems(startPlaying: true, seekTo: 0)
+        rebuildOutput(startPlaying: true, seekTo: 0)
     }
 
     func playNext(_ songs: [Song]) {
@@ -117,7 +178,7 @@ final class PlaybackController {
     func play() {
         guard hasQueue else { return }
         session.activate()
-        player.play()
+        output.play()
         isPlaying = true
         session.noteIsPlaying(true)
         publishNowPlaying(force: true)
@@ -125,7 +186,7 @@ final class PlaybackController {
     }
 
     func pause() {
-        player.pause()
+        output.pause()
         isPlaying = false
         tracker.interrupted(at: elapsed)
         session.noteIsPlaying(false)
@@ -146,12 +207,12 @@ final class PlaybackController {
             let steps = 30
             for step in 1...steps {
                 guard let self, isPlaying else { return }
-                player.volume = Float(1 - Double(step) / Double(steps))
+                output.volume = Float(1 - Double(step) / Double(steps))
                 try? await Task.sleep(for: .seconds(duration / Double(steps)))
             }
             guard let self else { return }
             pause()
-            player.volume = 1
+            output.volume = 1
         }
     }
 
@@ -160,7 +221,7 @@ final class PlaybackController {
             pause()
             return
         }
-        rebuildPlayerItems(startPlaying: isPlaying, seekTo: 0)
+        rebuildOutput(startPlaying: isPlaying, seekTo: 0)
     }
 
     /// Rewinds first, the way every native player does, and only then goes back.
@@ -173,24 +234,19 @@ final class PlaybackController {
             seek(to: 0)
             return
         }
-        rebuildPlayerItems(startPlaying: isPlaying, seekTo: 0)
+        rebuildOutput(startPlaying: isPlaying, seekTo: 0)
     }
 
     func seek(to seconds: Double) {
-        let target = CMTime(seconds: max(0, seconds), preferredTimescale: 600)
-        player.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                self.elapsed = seconds
-                self.tracker.interrupted(at: seconds)
-                self.publishNowPlaying(force: true)
-            }
-        }
+        output.seek(to: seconds)
+        elapsed = seconds
+        tracker.interrupted(at: seconds)
+        publishNowPlaying(force: true)
     }
 
     func jump(toOrderIndex index: Int) {
         queue.jump(toOrderIndex: index)
-        rebuildPlayerItems(startPlaying: true, seekTo: 0)
+        rebuildOutput(startPlaying: true, seekTo: 0)
     }
 
     func removeFromQueue(orderIndex index: Int) {
@@ -198,7 +254,7 @@ final class PlaybackController {
         queue.remove(atOrderIndex: index)
 
         if wasCurrent {
-            rebuildPlayerItems(startPlaying: isPlaying, seekTo: 0)
+            rebuildOutput(startPlaying: isPlaying, seekTo: 0)
         } else {
             refillWindow()
             persist()
@@ -253,36 +309,48 @@ final class PlaybackController {
         }
     }
 
-    // MARK: - Player items
+    // MARK: - Output selection
 
-    private func rebuildPlayerItems(startPlaying: Bool, seekTo seconds: Double) {
-        player.removeAllItems()
-        itemToSongID.removeAll()
+    /// Current track plus the preload window. Three items: preloading the next is what
+    /// makes an album boundary gapless, and inserting a 292-track playlist would be a
+    /// connection stampede.
+    private var currentWindow: [Song] {
+        guard let current = queue.current else { return [] }
+        return [current] + queue.upcoming(windowSize - 1)
+    }
 
-        guard let current = queue.current else {
+    /// The engine output only when it is switched on *and* every track in the window
+    /// is a completed download -- `AVAudioEngine` cannot read a URL, so a single
+    /// streaming track in the window disqualifies it. Falling back silently is
+    /// deliberate: the alternative is effects that half-work on half the library.
+    private func desiredOutput(for window: [Song]) -> AudioOutput {
+        guard let settings = appState?.audio, settings.isEnabled,
+              let engine = engineOutput, engine.canServe(window)
+        else { return queueOutput }
+        return engine
+    }
+
+    private func rebuildOutput(startPlaying: Bool, seekTo seconds: Double) {
+        let window = currentWindow
+
+        guard let current = window.first else {
+            output.stop()
             isPlaying = false
             return
         }
 
-        var items: [AVPlayerItem] = []
-        if let item = makeItem(for: current) { items.append(item) }
-        for song in queue.upcoming(windowSize - 1) {
-            if let item = makeItem(for: song) { items.append(item) }
+        let wanted = desiredOutput(for: window)
+        if wanted !== output {
+            output.stop()
+            output = wanted
         }
 
-        for item in items {
-            if player.canInsert(item, after: nil) {
-                player.insert(item, after: nil)
-            }
-        }
+        output.load(window: window, startAt: seconds)
 
-        expectedItem = player.currentItem
         duration = Double(current.duration ?? 0)
         elapsed = seconds
         tracker.trackChanged(to: current, duration: duration)
         tracker.interrupted(at: seconds)
-
-        if seconds > 0 { seek(to: seconds) }
 
         if startPlaying {
             play()
@@ -291,59 +359,9 @@ final class PlaybackController {
         }
     }
 
-    /// Keeps the window topped up without disturbing what is already playing.
+    /// Keeps the preload window topped up without disturbing what is playing.
     private func refillWindow() {
-        let wanted = queue.upcoming(windowSize - 1)
-        let alreadyQueued = player.items().dropFirst().compactMap {
-            itemToSongID[ObjectIdentifier($0)]
-        }
-
-        guard Array(alreadyQueued) != wanted.map(\.id) else { return }
-
-        // Drop everything after the current item and re-add: AVPlayerItem cannot be
-        // reordered or reused, so rebuilding the tail is the only option.
-        for item in player.items().dropFirst() {
-            itemToSongID[ObjectIdentifier(item)] = nil
-            player.remove(item)
-        }
-        for song in wanted {
-            if let item = makeItem(for: song), player.canInsert(item, after: nil) {
-                player.insert(item, after: nil)
-            }
-        }
-    }
-
-    private func makeItem(for song: Song) -> AVPlayerItem? {
-        guard let appState else { return nil }
-
-        var options: [String: Any] = [:]
-
-        // A downloaded file wins over the network unconditionally: it is the original
-        // bytes, it is instant, and it works with the server switched off. This is the
-        // whole reason downloads exist, so it is checked before anything else.
-        let url: URL
-        if let local = appState.downloads.localURL(for: song.id) {
-            url = local
-        } else {
-            guard let signer = appState.signer,
-                  // Always `raw`: a transcoded response is chunked with no
-                  // Content-Length and no byte ranges, which breaks seeking.
-                  let streamURL = signer.url("stream.view", ["format": "raw", "id": song.id])
-            else { return nil }
-            url = streamURL
-
-            // `stream.view` has no path extension, so AVFoundation has nothing to
-            // sniff and FLAC fails to pick a decoder. Override the type explicitly.
-            // A local file has its extension, so this is only needed when streaming.
-            if let mime = song.contentType ?? Self.mimeType(for: song.suffix) {
-                options[AVURLAssetOverrideMIMETypeKey] = mime
-            }
-        }
-
-        let asset = AVURLAsset(url: url, options: options)
-        let item = AVPlayerItem(asset: asset)
-        itemToSongID[ObjectIdentifier(item)] = song.id
-        return item
+        output.updateUpcoming(queue.upcoming(windowSize - 1))
     }
 
     private static func mimeType(for suffix: String?) -> String? {
@@ -357,62 +375,44 @@ final class PlaybackController {
         }
     }
 
-    // MARK: - Time
+    // MARK: - Time and transitions
 
-    private func addTimeObserver() {
-        // 4 Hz: enough for a smooth scrubber, and cheap. Item advancement is
-        // detected here by identity rather than by KVO, which would be delivered on
-        // an internal queue and need an unsafe hop under strict concurrency.
-        let interval = CMTime(value: 1, timescale: 4)
-        timeObserver = player.addPeriodicTimeObserver(
-            forInterval: interval,
-            queue: .main
-        ) { [weak self] time in
-            MainActor.assumeIsolated {
-                self?.tick(time)
-            }
-        }
-    }
+    private func tick(elapsed newElapsed: Double, isMoving: Bool) {
+        elapsed = newElapsed
+        isBuffering = output.isBuffering
 
-    private func tick(_ time: CMTime) {
-        if player.currentItem !== expectedItem {
-            expectedItem = player.currentItem
-            handleAdvancedItem()
-            return
-        }
-
-        elapsed = time.seconds.isFinite ? time.seconds : 0
-        isBuffering = player.timeControlStatus == .waitingToPlayAtSpecifiedRate
-
-        if duration == 0, let itemDuration = player.currentItem?.duration.seconds,
-           itemDuration.isFinite, itemDuration > 0 {
-            duration = itemDuration
+        // The queue's duration comes from the server and can be absent or wrong; the
+        // output knows the real one once the file or stream is open.
+        if duration == 0, output.duration > 0 {
+            duration = output.duration
             tracker.trackChanged(to: queue.current, duration: duration)
         }
 
-        // Only while the audio is genuinely moving: a stalled buffer still ticks.
-        if isPlaying, player.timeControlStatus == .playing {
+        // A stalled stream still ticks, so listening time is only credited while the
+        // audio is genuinely moving.
+        if isPlaying, isMoving {
             tracker.advanced(to: elapsed)
         } else {
             tracker.interrupted(at: elapsed)
         }
     }
 
-    /// The player moved on by itself, so follow it in the logical queue.
-    private func handleAdvancedItem() {
+    /// The output moved on by itself, so follow it in the logical queue.
+    private func handleAdvanced(to songID: String?) {
         if queue.repeatMode == .one {
             seek(to: 0)
             play()
             return
         }
 
-        guard let currentItem = player.currentItem,
-              let songID = itemToSongID[ObjectIdentifier(currentItem)],
+        guard let songID,
               let orderIndex = queue.order.firstIndex(where: { queue.tracks[$0].id == songID })
         else {
-            // Ran off the end of the window.
+            // Ran off the end of the window, or the next track is one this output
+            // cannot serve -- either way the queue decides and the output is rebuilt,
+            // which is also where a fall back from the engine to streaming happens.
             if queue.advance() {
-                rebuildPlayerItems(startPlaying: true, seekTo: 0)
+                rebuildOutput(startPlaying: true, seekTo: 0)
             } else {
                 pause()
             }
@@ -422,7 +422,7 @@ final class PlaybackController {
         appState?.sleepTimer.trackDidFinish()
 
         queue.position = orderIndex
-        duration = Double(queue.current?.duration ?? 0)
+        duration = output.duration > 0 ? output.duration : Double(queue.current?.duration ?? 0)
         elapsed = 0
         tracker.trackChanged(to: queue.current, duration: duration)
         refillWindow()
@@ -481,6 +481,6 @@ final class PlaybackController {
     func restore() async {
         guard let snapshot = await store.load(), !snapshot.queue.isEmpty else { return }
         queue = snapshot.queue
-        rebuildPlayerItems(startPlaying: false, seekTo: snapshot.positionSeconds)
+        rebuildOutput(startPlaying: false, seekTo: snapshot.positionSeconds)
     }
 }

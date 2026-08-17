@@ -3,6 +3,8 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(AppState.self) private var appState
     @Environment(LibraryScopeStore.self) private var scope
+    @Environment(AudioSettings.self) private var audio
+    @Environment(DownloadCenter.self) private var downloads
 
     @State private var testResult: String?
     @State private var isTesting = false
@@ -51,6 +53,15 @@ struct SettingsView: View {
                 }
             }
 
+            Section {
+                NavigationLink(value: Destination.audioSettings) {
+                    LabeledContent("Audio", value: audioSummary)
+                }
+                NavigationLink(value: Destination.downloads) {
+                    LabeledContent("Downloads", value: downloadSummary)
+                }
+            }
+
             Section("About") {
                 LabeledContent("Version", value: version)
             }
@@ -62,6 +73,17 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
+    }
+
+    private var audioSummary: String {
+        guard audio.isEnabled else { return "Gapless" }
+        if audio.crossfadeSeconds > 0 { return "Crossfade \(Int(audio.crossfadeSeconds))s" }
+        return audio.isFlat ? "Gapless" : audio.presetName
+    }
+
+    private var downloadSummary: String {
+        let count = downloads.catalog.entries.count
+        return count == 0 ? "None" : "\(count) · \(downloads.catalog.totalBytes.asFileSize)"
     }
 
     private var version: String {

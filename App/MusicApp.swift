@@ -17,6 +17,7 @@ struct MusicApp: App {
                 .environment(appState.downloads)
                 .environment(appState.reachability)
                 .environment(appState.sleepTimer)
+                .environment(appState.audio)
                 .preferredColorScheme(.dark)
                 .tint(.appTint)
                 .onChange(of: scenePhase) { _, phase in
