@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import UIKit
 
 /// Cover-art cache.
@@ -8,6 +9,7 @@ import UIKit
 /// crucial part is `cached(_:_:)` being **synchronous**: a view can check it during
 /// `init` and, on a hit, render with no placeholder and no transition at all.
 @MainActor
+@Observable
 final class ArtworkStore {
     /// Three sizes only, so both this cache and the server's stay hot.
     enum Size: Int, Sendable {
