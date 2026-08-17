@@ -37,7 +37,8 @@ enum AudioTap {
                 tapStorageOut.pointee = clientInfo
             },
             finalize: { tap in
-                guard let storage = MTAudioProcessingTapGetStorage(tap) else { return }
+                // Non-optional: tap storage is always whatever `init` put there.
+                let storage = MTAudioProcessingTapGetStorage(tap)
                 let buffer = Unmanaged<AudioSampleBuffer>.fromOpaque(storage)
                 buffer.takeUnretainedValue().markStopped()
                 buffer.release()
@@ -53,10 +54,9 @@ enum AudioTap {
                     nil,
                     numberFramesOut
                 )
-                guard status == noErr, let storage = MTAudioProcessingTapGetStorage(tap) else {
-                    return
-                }
+                guard status == noErr else { return }
 
+                let storage = MTAudioProcessingTapGetStorage(tap)
                 let buffer = Unmanaged<AudioSampleBuffer>.fromOpaque(storage)
                     .takeUnretainedValue()
 
@@ -72,25 +72,26 @@ enum AudioTap {
             }
         )
 
-        var unmanagedTap: Unmanaged<MTAudioProcessingTap>?
+        // Imported as a managed optional rather than as `Unmanaged`, so ARC owns the
+        // tap and there is no manual release to balance here.
+        var tap: MTAudioProcessingTap?
         let status = MTAudioProcessingTapCreate(
             kCFAllocatorDefault,
             &callbacks,
             // Post-effects, so this sees the samples on their way out rather than
             // before the player's own processing.
             kMTAudioProcessingTapCreationFlag_PostEffects,
-            &unmanagedTap
+            &tap
         )
 
-        guard status == noErr, let tap = unmanagedTap else {
-            // Balance the retain that will now never reach `finalize`.
+        guard status == noErr, let tap else {
+            // `finalize` will never run, so balance the retain made above.
             Unmanaged<AudioSampleBuffer>.fromOpaque(clientInfo).release()
             return nil
         }
 
         let parameters = AVMutableAudioMixInputParameters(track: track)
-        parameters.audioTapProcessor = tap.takeUnretainedValue()
-        tap.release()
+        parameters.audioTapProcessor = tap
 
         let mix = AVMutableAudioMix()
         mix.inputParameters = [parameters]
