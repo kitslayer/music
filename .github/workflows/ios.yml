@@ -1,0 +1,61 @@
+name: Build iOS app
+
+# Produces an UNSIGNED .ipa. It is re-signed on-device by xtool with a free
+# Apple developer certificate, which is why nothing here needs secrets.
+#
+# There is no macOS available locally, so this workflow is the compiler: a red
+# run here is the only signal that the Swift does not build.
+
+on:
+    workflow_dispatch:
+    push:
+        branches: [main, development]
+
+jobs:
+    build:
+        runs-on: macos-26
+        timeout-minutes: 30
+
+        steps:
+            - uses: actions/checkout@v5
+
+            - name: Show toolchain
+              run: |
+                  xcodebuild -version
+                  swift --version
+
+            - name: Archive (ad-hoc signed)
+              run: |
+                  # Ad-hoc rather than unsigned: a binary with no
+                  # LC_CODE_SIGNATURE at all cannot be reliably re-signed later,
+                  # and iOS then refuses to launch it ("Bootstrap failed").
+                  xcodebuild \
+                    -project Navidrome.xcodeproj \
+                    -scheme Navidrome \
+                    -configuration Release \
+                    -sdk iphoneos \
+                    -destination 'generic/platform=iOS' \
+                    -archivePath "$RUNNER_TEMP/Navidrome.xcarchive" \
+                    archive \
+                    CODE_SIGNING_ALLOWED=YES \
+                    AD_HOC_CODE_SIGNING_ALLOWED=YES \
+                    CODE_SIGNING_REQUIRED=NO \
+                    CODE_SIGN_IDENTITY="-" \
+                    CODE_SIGN_STYLE=Manual \
+                    DEVELOPMENT_TEAM=""
+
+            - name: Package .ipa
+              run: |
+                  APP="$RUNNER_TEMP/Navidrome.xcarchive/Products/Applications/Navidrome.app"
+                  test -d "$APP" || { echo "no .app produced"; exit 1; }
+                  mkdir -p "$RUNNER_TEMP/Payload"
+                  cp -R "$APP" "$RUNNER_TEMP/Payload/"
+                  cd "$RUNNER_TEMP"
+                  zip -qry Navidrome-unsigned.ipa Payload
+                  ls -lh Navidrome-unsigned.ipa
+
+            - uses: actions/upload-artifact@v4
+              with:
+                  name: Navidrome-unsigned-ipa
+                  path: ${{ runner.temp }}/Navidrome-unsigned.ipa
+                  if-no-files-found: error
