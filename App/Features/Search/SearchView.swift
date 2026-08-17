@@ -1,0 +1,158 @@
+import SwiftUI
+
+struct SearchView: View {
+    @Environment(AppState.self) private var appState
+    @Environment(LibraryScopeStore.self) private var scope
+
+    @State private var query = ""
+    @State private var results: SearchResult3?
+    @State private var isSearching = false
+    @State private var genres: [Genre] = []
+
+    private let genreColumns = [
+        GridItem(.flexible(), spacing: Metrics.itemSpacing),
+        GridItem(.flexible(), spacing: Metrics.itemSpacing),
+    ]
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if query.isEmpty {
+                    idleState
+                } else if let results, results.isEmpty, !isSearching {
+                    ContentUnavailableView.search(text: query)
+                } else {
+                    resultsList
+                }
+            }
+            .navigationTitle("Search")
+            .musicDestinations()
+            .searchable(
+                text: $query,
+                placement: .navigationBarDrawer(displayMode: .always),
+                prompt: "Artists, Albums, Songs"
+            )
+            .scrollDismissesKeyboard(.immediately)
+            .task(id: SearchKey(query: query, scope: scope.generation)) {
+                await search()
+            }
+            .task(id: scope.generation) {
+                genres = ((try? await appState.client.genres(scope: scope.scope)) ?? [])
+                    .sorted { ($0.albumCount ?? 0) > ($1.albumCount ?? 0) }
+            }
+        }
+    }
+
+    /// Genres belong here rather than on Home: a genre is a lookup facet, not a
+    /// recommendation.
+    private var idleState: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Metrics.headerToContent) {
+                Text("Browse Genres")
+                    .font(.title3.weight(.semibold))
+                    .padding(.horizontal, Metrics.gutter)
+
+                LazyVGrid(columns: genreColumns, spacing: Metrics.itemSpacing) {
+                    ForEach(genres.prefix(30)) { genre in
+                        NavigationLink(value: Destination.genre(genre.value)) {
+                            Text(genre.value)
+                                .font(.subheadline.weight(.medium))
+                                .lineLimit(2)
+                                .frame(maxWidth: .infinity, minHeight: 72)
+                                .padding(.horizontal, 8)
+                                .background(.quaternary, in: RoundedRectangle(
+                                    cornerRadius: Metrics.radiusCard, style: .continuous
+                                ))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, Metrics.gutter)
+            }
+            .padding(.vertical, Metrics.itemSpacing)
+        }
+    }
+
+    private var resultsList: some View {
+        List {
+            if let artists = results?.artists, !artists.isEmpty {
+                Section("Artists") {
+                    ForEach(artists.prefix(4)) { artist in
+                        NavigationLink(value: Destination.artist(ArtistRef(artist))) {
+                            HStack(spacing: Metrics.itemSpacing) {
+                                ArtistArtwork(
+                                    id: artist.coverArt,
+                                    diameter: Metrics.thumbSmall,
+                                    initials: artist.name.monogram
+                                )
+                                Text(artist.name).lineLimit(1)
+                            }
+                        }
+                    }
+                }
+            }
+
+            if let albums = results?.albums, !albums.isEmpty {
+                Section("Albums") {
+                    ForEach(albums.prefix(6)) { album in
+                        NavigationLink(value: Destination.album(AlbumRef(album))) {
+                            HStack(spacing: Metrics.itemSpacing) {
+                                ArtworkImage(
+                                    id: album.coverArt,
+                                    size: .thumb,
+                                    cornerRadius: Metrics.radiusThumb
+                                )
+                                .frame(width: Metrics.thumbSmall, height: Metrics.thumbSmall)
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(album.name).lineLimit(1)
+                                    if let artist = album.artist {
+                                        Text(artist)
+                                            .font(.footnote)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if let songs = results?.songs, !songs.isEmpty {
+                Section("Songs") {
+                    ForEach(songs.prefix(20)) { song in
+                        SongRow(song: song, style: .withArtwork)
+                    }
+                }
+            }
+        }
+        .listStyle(.plain)
+        .overlay {
+            if isSearching, results == nil { ProgressView() }
+        }
+    }
+
+    private struct SearchKey: Equatable {
+        let query: String
+        let scope: Int
+    }
+
+    /// The debounce is the `.task(id:)` itself: a keystroke cancels the previous
+    /// task, so sleeping at the top is all that is needed. No Combine, no timers.
+    private func search() async {
+        let trimmed = query.trimmingCharacters(in: .whitespaces)
+
+        guard trimmed.count >= 2 else {
+            results = nil
+            return
+        }
+
+        try? await Task.sleep(for: .milliseconds(300))
+        guard !Task.isCancelled else { return }
+
+        isSearching = true
+        results = try? await appState.client.search(query: trimmed, scope: scope.scope)
+        isSearching = false
+    }
+}

@@ -8,7 +8,10 @@ struct MusicApp: App {
         WindowGroup {
             RootView()
                 .environment(appState)
+                .environment(appState.artwork)
+                .environment(appState.scope)
                 .preferredColorScheme(.dark)
+                .tint(.appTint)
         }
     }
 }

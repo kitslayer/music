@@ -1,41 +1,22 @@
 import SwiftUI
 
-/// Top-level navigation. A real `TabView` rather than a hand-built bar, so it
-/// gets the system's height, blur, safe-area handling and scroll-to-top for free.
+/// Three tabs, because each is a different *way of finding* music: recommended,
+/// owned, named. A fourth tab would be a destination rather than a mode, which is
+/// why Downloads and Settings live inside Library and Home instead.
 struct MainTabView: View {
     var body: some View {
         TabView {
-            Tab("Albums", systemImage: "square.stack") {
-                AlbumListView()
+            Tab("Home", systemImage: "house") {
+                HomeView()
             }
 
-            Tab("Settings", systemImage: "gearshape") {
-                SettingsView()
+            Tab("Library", systemImage: "square.stack") {
+                LibraryHubView()
             }
-        }
-    }
-}
 
-struct SettingsView: View {
-    @Environment(AppState.self) private var appState
-
-    var body: some View {
-        NavigationStack {
-            List {
-                if let credentials = appState.credentials {
-                    Section("Server") {
-                        LabeledContent("Address", value: credentials.baseURL.absoluteString)
-                        LabeledContent("User", value: credentials.username)
-                    }
-                }
-
-                Section {
-                    Button("Sign out", role: .destructive) {
-                        Task { await appState.signOut() }
-                    }
-                }
+            Tab(role: .search) {
+                SearchView()
             }
-            .navigationTitle("Settings")
         }
     }
 }

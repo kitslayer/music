@@ -2,7 +2,8 @@ import SwiftUI
 
 struct AlbumDetailView: View {
     @Environment(AppState.self) private var appState
-    let album: Album
+
+    let album: AlbumRef
 
     @State private var detail: AlbumDetail?
     @State private var error: String?
@@ -13,6 +14,7 @@ struct AlbumDetailView: View {
                 header
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
             }
 
             if let error {
@@ -20,55 +22,75 @@ struct AlbumDetailView: View {
                     .foregroundStyle(.red)
             }
 
-            // A plain List section, so rows scroll the header away for free --
-            // no scroll-linked collapse logic and nothing pinned in the way.
-            ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
-                SongRow(song: song, position: index + 1)
+            if detail?.hasMultipleDiscs == true {
+                ForEach(discs, id: \.number) { disc in
+                    Section("Disc \(disc.number)") {
+                        songRows(disc.songs)
+                    }
+                }
+            } else {
+                songRows(songs)
             }
         }
         .listStyle(.plain)
-        .navigationTitle(album.name)
-        .navigationBarTitleDisplayMode(.inline)
+        .collapsingTitle(album.name)
         .task { await load() }
     }
 
     private var songs: [Song] { detail?.songs ?? [] }
 
+    private var discs: [(number: Int, songs: [Song])] {
+        Dictionary(grouping: songs) { $0.discNumber ?? 1 }
+            .map { (number: $0.key, songs: $0.value) }
+            .sorted { $0.number < $1.number }
+    }
+
+    @ViewBuilder
+    private func songRows(_ list: [Song]) -> some View {
+        ForEach(Array(list.enumerated()), id: \.element.id) { index, song in
+            SongRow(song: song, style: .numbered(song.track ?? index + 1))
+                // Separators start at the title, not under the number column.
+                .alignmentGuide(.listRowSeparatorLeading) { _ in 36 }
+        }
+    }
+
     private var header: some View {
-        VStack(spacing: 12) {
-            CoverArt(id: album.coverArt, size: 600)
+        VStack(spacing: Metrics.headerToContent) {
+            ArtworkImage(id: album.coverArt, size: .full, cornerRadius: Metrics.radiusHeader)
                 .aspectRatio(1, contentMode: .fit)
-                .frame(maxWidth: 240)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .frame(maxWidth: Metrics.detailArtwork)
+                .shadow(radius: 12, y: 6)
 
             VStack(spacing: 4) {
                 Text(album.name)
-                    .font(.title3.weight(.semibold))
+                    .font(.title2.weight(.bold))
                     .multilineTextAlignment(.center)
 
-                if let artist = album.artist {
+                if let artist = album.artist ?? detail?.artist {
                     Text(artist)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
 
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+                if !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
             }
+
+            PlayShuffleButtons(onPlay: {}, onShuffle: {})
+                .padding(.horizontal, Metrics.gutter)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
+        .padding(.vertical, Metrics.gutter)
     }
 
     private var subtitle: String {
         var parts: [String] = []
-        if let year = album.year { parts.append(String(year)) }
-        let count = detail?.songCount ?? album.songCount
-        if let count { parts.append("\(count) tracks") }
-        if let duration = detail?.duration ?? album.duration {
-            parts.append(duration.asDuration)
-        }
+        if let year = detail?.year { parts.append(String(year)) }
+        if let count = detail?.songCount { parts.append("\(count) tracks") }
+        if let duration = detail?.duration { parts.append(duration.asLongDuration) }
         return parts.joined(separator: " · ")
     }
 
@@ -79,39 +101,5 @@ struct AlbumDetailView: View {
         } catch {
             self.error = error.localizedDescription
         }
-    }
-}
-
-struct SongRow: View {
-    let song: Song
-    let position: Int
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Text("\(position)")
-                .font(.footnote.monospacedDigit())
-                .foregroundStyle(.tertiary)
-                .frame(width: 24, alignment: .trailing)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(song.title)
-                    .lineLimit(1)
-                if let artist = song.artist {
-                    Text(artist)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
-
-            Spacer(minLength: 8)
-
-            if let duration = song.duration {
-                Text(duration.asDuration)
-                    .font(.footnote.monospacedDigit())
-                    .foregroundStyle(.tertiary)
-            }
-        }
-        .contentShape(Rectangle())
     }
 }
