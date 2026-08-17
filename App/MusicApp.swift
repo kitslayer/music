@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct NavidromeApp: App {
+struct MusicApp: App {
     @State private var appState = AppState()
 
     var body: some Scene {

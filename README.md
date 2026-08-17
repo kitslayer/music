@@ -1,4 +1,4 @@
-# Navidrome for iOS
+# Music
 
 A native SwiftUI music client for [Navidrome](https://www.navidrome.org/),
 built for one iPhone and nothing else.
@@ -19,8 +19,8 @@ publishes an unsigned `.ipa`; it is signed and installed on-device with
 [xtool](https://github.com/xtool-org/xtool):
 
 ```sh
-gh run download <run-id> -n Navidrome-unsigned-ipa -D dist
-xtool install dist/Navidrome-unsigned.ipa
+gh run download <run-id> -n Music-unsigned-ipa -D dist
+xtool install dist/Music-unsigned.ipa
 ```
 
 A free Apple developer certificate expires after 7 days, so re-running

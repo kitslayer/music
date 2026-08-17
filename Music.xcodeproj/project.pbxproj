@@ -17,11 +17,11 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFileReference section */
-		A1A0000000000000000002 /* Navidrome.app */ = {
+		A1A0000000000000000002 /* Music.app */ = {
 			isa = PBXFileReference;
 			explicitFileType = wrapper.application;
 			includeInIndex = 0;
-			path = Navidrome.app;
+			path = Music.app;
 			sourceTree = BUILT_PRODUCTS_DIR;
 		};
 /* End PBXFileReference section */
@@ -48,7 +48,7 @@
 		A1A0000000000000000005 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				A1A0000000000000000002 /* Navidrome.app */,
+				A1A0000000000000000002 /* Music.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -56,9 +56,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		A1A0000000000000000006 /* Navidrome */ = {
+		A1A0000000000000000006 /* Music */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A1A0000000000000000007 /* Build configuration list for PBXNativeTarget "Navidrome" */;
+			buildConfigurationList = A1A0000000000000000007 /* Build configuration list for PBXNativeTarget "Music" */;
 			buildPhases = (
 				A1A0000000000000000008 /* Sources */,
 				A1A0000000000000000003 /* Frameworks */,
@@ -71,9 +71,9 @@
 			fileSystemSynchronizedGroups = (
 				A1A0000000000000000001 /* App */,
 			);
-			name = Navidrome;
-			productName = Navidrome;
-			productReference = A1A0000000000000000002 /* Navidrome.app */;
+			name = Music;
+			productName = Music;
+			productReference = A1A0000000000000000002 /* Music.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -91,7 +91,7 @@
 					};
 				};
 			};
-			buildConfigurationList = A1A000000000000000000B /* Build configuration list for PBXProject "Navidrome" */;
+			buildConfigurationList = A1A000000000000000000B /* Build configuration list for PBXProject "Music" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -104,7 +104,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				A1A0000000000000000006 /* Navidrome */,
+				A1A0000000000000000006 /* Music */,
 			);
 		};
 /* End PBXProject section */
@@ -174,13 +174,13 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = Navidrome-Info.plist;
+				INFOPLIST_FILE = Music-Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.milescoviello.navidrome;
+				PRODUCT_BUNDLE_IDENTIFIER = com.milescoviello.music;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -195,13 +195,13 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = Navidrome-Info.plist;
+				INFOPLIST_FILE = Music-Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.milescoviello.navidrome;
+				PRODUCT_BUNDLE_IDENTIFIER = com.milescoviello.music;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -212,7 +212,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		A1A0000000000000000007 /* Build configuration list for PBXNativeTarget "Navidrome" */ = {
+		A1A0000000000000000007 /* Build configuration list for PBXNativeTarget "Music" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A1A000000000000000000E /* Debug */,
@@ -221,7 +221,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		A1A000000000000000000B /* Build configuration list for PBXProject "Navidrome" */ = {
+		A1A000000000000000000B /* Build configuration list for PBXProject "Music" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A1A000000000000000000C /* Debug */,

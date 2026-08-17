@@ -7,7 +7,7 @@ import Security
 /// reinstall keeps the same bundle identifier, so the Keychain item survives --
 /// unlike anything kept only in the app container.
 enum Keychain {
-    private static let service = "com.milescoviello.navidrome"
+    private static let service = "com.milescoviello.music"
     private static let account = "server-credentials"
 
     static func save(_ credentials: SubsonicClient.Credentials) {

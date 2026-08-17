@@ -6,9 +6,9 @@
             <BuildableReference
                BuildableIdentifier="primary"
                BlueprintIdentifier="A1A0000000000000000006"
-               BuildableName="Navidrome.app"
-               BlueprintName="Navidrome"
-               ReferencedContainer="container:Navidrome.xcodeproj">
+               BuildableName="Music.app"
+               BlueprintName="Music"
+               ReferencedContainer="container:Music.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -21,9 +21,9 @@
          <BuildableReference
             BuildableIdentifier="primary"
             BlueprintIdentifier="A1A0000000000000000006"
-            BuildableName="Navidrome.app"
-            BlueprintName="Navidrome"
-            ReferencedContainer="container:Navidrome.xcodeproj">
+            BuildableName="Music.app"
+            BlueprintName="Music"
+            ReferencedContainer="container:Music.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -32,9 +32,9 @@
          <BuildableReference
             BuildableIdentifier="primary"
             BlueprintIdentifier="A1A0000000000000000006"
-            BuildableName="Navidrome.app"
-            BlueprintName="Navidrome"
-            ReferencedContainer="container:Navidrome.xcodeproj">
+            BuildableName="Music.app"
+            BlueprintName="Music"
+            ReferencedContainer="container:Music.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

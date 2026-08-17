@@ -30,12 +30,12 @@ jobs:
                   # LC_CODE_SIGNATURE at all cannot be reliably re-signed later,
                   # and iOS then refuses to launch it ("Bootstrap failed").
                   xcodebuild \
-                    -project Navidrome.xcodeproj \
-                    -scheme Navidrome \
+                    -project Music.xcodeproj \
+                    -scheme Music \
                     -configuration Release \
                     -sdk iphoneos \
                     -destination 'generic/platform=iOS' \
-                    -archivePath "$RUNNER_TEMP/Navidrome.xcarchive" \
+                    -archivePath "$RUNNER_TEMP/Music.xcarchive" \
                     archive \
                     CODE_SIGNING_ALLOWED=YES \
                     AD_HOC_CODE_SIGNING_ALLOWED=YES \
@@ -46,16 +46,16 @@ jobs:
 
             - name: Package .ipa
               run: |
-                  APP="$RUNNER_TEMP/Navidrome.xcarchive/Products/Applications/Navidrome.app"
+                  APP="$RUNNER_TEMP/Music.xcarchive/Products/Applications/Music.app"
                   test -d "$APP" || { echo "no .app produced"; exit 1; }
                   mkdir -p "$RUNNER_TEMP/Payload"
                   cp -R "$APP" "$RUNNER_TEMP/Payload/"
                   cd "$RUNNER_TEMP"
-                  zip -qry Navidrome-unsigned.ipa Payload
-                  ls -lh Navidrome-unsigned.ipa
+                  zip -qry Music-unsigned.ipa Payload
+                  ls -lh Music-unsigned.ipa
 
             - uses: actions/upload-artifact@v4
               with:
-                  name: Navidrome-unsigned-ipa
-                  path: ${{ runner.temp }}/Navidrome-unsigned.ipa
+                  name: Music-unsigned-ipa
+                  path: ${{ runner.temp }}/Music-unsigned.ipa
                   if-no-files-found: error

@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>Navidrome</string>
+	<string>Music</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -47,6 +47,6 @@
 	</dict>
 	<!-- iOS 14+ requires a stated reason before an app may reach LAN addresses. -->
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Navidrome needs your local network to reach your music server.</string>
+	<string>Music needs your local network to reach your music server.</string>
 </dict>
 </plist>
