@@ -187,7 +187,7 @@ private struct GroupHeader: View {
             } label: {
                 Image(systemName: "trash")
                     .foregroundStyle(.secondary)
-                    .frame(width: Metrics.minimumTouchTarget, height: Metrics.minimumTouchTarget)
+                    .frame(minWidth: Metrics.minimumTouchTarget, minHeight: Metrics.minimumTouchTarget)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)

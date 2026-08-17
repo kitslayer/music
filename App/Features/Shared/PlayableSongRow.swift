@@ -16,10 +16,35 @@ struct PlayableSongRow: View {
 
     var style: SongRow.Style = .withArtwork
     var showsNavigation = true
+    /// When selecting, a tap ticks the row instead of starting playback.
+    var selection: SongSelection?
 
     private var song: Song { songs[index] }
 
     var body: some View {
+        if let selection, selection.isActive {
+            selectableRow(selection)
+        } else {
+            playableRow
+        }
+    }
+
+    private func selectableRow(_ selection: SongSelection) -> some View {
+        let isChosen = selection.chosen.contains(song.id)
+
+        return Button {
+            selection.toggle(song.id)
+        } label: {
+            HStack(spacing: Metrics.itemSpacing) {
+                Image(systemName: isChosen ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(isChosen ? Color.appTint : .secondary)
+                SongRow(song: song, style: style, isCurrent: false)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var playableRow: some View {
         Button {
             appState.player.play(songs: songs, startingAt: index, source: source)
         } label: {

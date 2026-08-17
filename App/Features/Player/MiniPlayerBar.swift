@@ -38,7 +38,7 @@ struct MiniPlayerBar: View {
                     } label: {
                         Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                             .font(.title3)
-                            .frame(width: Metrics.minimumTouchTarget, height: Metrics.minimumTouchTarget)
+                            .frame(minWidth: Metrics.minimumTouchTarget, minHeight: Metrics.minimumTouchTarget)
                     }
                     .buttonStyle(.plain)
 
@@ -47,7 +47,7 @@ struct MiniPlayerBar: View {
                     } label: {
                         Image(systemName: "forward.fill")
                             .font(.title3)
-                            .frame(width: Metrics.minimumTouchTarget, height: Metrics.minimumTouchTarget)
+                            .frame(minWidth: Metrics.minimumTouchTarget, minHeight: Metrics.minimumTouchTarget)
                     }
                     .buttonStyle(.plain)
                 }
@@ -72,6 +72,10 @@ struct MiniPlayerBar: View {
                         }
                 )
                 .overlay(alignment: .bottom) { progressLine }
+                // Capped, not disabled: the bar is 56pt of chrome above the tab bar, and
+                // at accessibility sizes an uncapped title pushes the transport buttons
+                // off the edge. Everything on a full screen still scales freely.
+                .dynamicTypeSize(...DynamicTypeSize.accessibility1)
             }
         }
     }

@@ -137,6 +137,7 @@ struct PlaylistDetailView: View {
     let playlist: PlaylistRef
 
     @State private var detail: PlaylistDetail?
+    @State private var selection = SongSelection()
 
     var body: some View {
         List {
@@ -149,7 +150,9 @@ struct PlaylistDetailView: View {
 
             // Playlist order is the server's order; never re-sorted.
             ForEach(Array(songs.enumerated()), id: \.offset) { index, _ in
-                PlayableSongRow(songs: songs, index: index, source: playlist.name)
+                PlayableSongRow(
+                    songs: songs, index: index, source: playlist.name, selection: selection
+                )
                     // Trailing swipe removes from the playlist here, rather than the
                     // generic "add to queue": in a playlist, removal is the action you
                     // actually want, and the index is valid because `songs` came
@@ -180,6 +183,9 @@ struct PlaylistDetailView: View {
                     Button("Start Radio", systemImage: "dot.radiowaves.left.and.right") {
                         startRadio()
                     }
+                    Button("Select Tracks", systemImage: "checkmark.circle") {
+                        selection.begin()
+                    }
                     if let match = store.playlists.first(where: { $0.id == playlist.id }) {
                         Divider()
                         Button("Rename…", systemImage: "pencil") { editing = match }
@@ -190,6 +196,18 @@ struct PlaylistDetailView: View {
             }
         }
         .sheet(item: $editing) { EditPlaylistSheet(playlist: $0) }
+        .safeAreaInset(edge: .bottom) {
+            if selection.isActive {
+                SelectionToolbar(selection: selection, all: songs, source: playlist.name)
+            }
+        }
+        .toolbar {
+            if selection.isActive {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Done") { selection.end() }
+                }
+            }
+        }
         .task { await load() }
     }
 

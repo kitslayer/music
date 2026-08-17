@@ -7,6 +7,7 @@ struct AlbumDetailView: View {
     let album: AlbumRef
 
     @State private var detail: AlbumDetail?
+    @State private var selection = SongSelection()
     @State private var error: String?
 
     var body: some View {
@@ -54,10 +55,25 @@ struct AlbumDetailView: View {
                         startRadio()
                     }
                     AddToPlaylistMenu(songs: songs, suggestedName: album.name)
+                    Divider()
+                    Button("Select Tracks", systemImage: "checkmark.circle") {
+                        selection.begin()
+                    }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
                 .disabled(songs.isEmpty)
+            }
+
+            if selection.isActive {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Done") { selection.end() }
+                }
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if selection.isActive {
+                SelectionToolbar(selection: selection, all: songs, source: album.name)
             }
         }
         .task { await load() }
@@ -81,7 +97,8 @@ struct AlbumDetailView: View {
                 index: songs.firstIndex(of: song) ?? 0,
                 source: album.name,
                 style: .numbered(song.track ?? 1),
-                showsNavigation: false
+                showsNavigation: false,
+                selection: selection
             )
             // Separators start at the title, not under the number column.
             .alignmentGuide(.listRowSeparatorLeading) { _ in 36 }

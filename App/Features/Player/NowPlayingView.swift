@@ -114,7 +114,7 @@ struct NowPlayingView: View {
                 Image(systemName: "chevron.down")
                     .font(.body.weight(.semibold))
                     .foregroundStyle(.white.opacity(0.8))
-                    .frame(width: Metrics.minimumTouchTarget, height: Metrics.minimumTouchTarget)
+                    .frame(minWidth: Metrics.minimumTouchTarget, minHeight: Metrics.minimumTouchTarget)
                     .contentShape(Rectangle())
             }
             .accessibilityLabel("Close player")
@@ -319,19 +319,23 @@ struct NowPlayingView: View {
                 Image(systemName: "shuffle")
                     .foregroundStyle(player.queue.isShuffled ? Color.appTint : .white.opacity(0.7))
             }
+            .accessibilityLabel(player.queue.isShuffled ? "Shuffle on" : "Shuffle off")
 
             Button { player.previous() } label: {
                 Image(systemName: "backward.fill").font(.title2)
             }
+            .accessibilityLabel("Previous track")
 
             Button { player.togglePlayPause() } label: {
                 Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                     .font(.system(size: 56))
             }
+            .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
 
             Button { player.next() } label: {
                 Image(systemName: "forward.fill").font(.title2)
             }
+            .accessibilityLabel("Next track")
 
             Button { player.cycleRepeat() } label: {
                 Image(systemName: player.queue.repeatMode.symbol)
@@ -339,6 +343,7 @@ struct NowPlayingView: View {
                         player.queue.repeatMode == .off ? .white.opacity(0.7) : Color.appTint
                     )
             }
+            .accessibilityLabel("Repeat: \(player.queue.repeatMode.rawValue)")
         }
         .foregroundStyle(.white)
         .padding(.top, Metrics.itemSpacing)
@@ -369,7 +374,7 @@ struct NowPlayingView: View {
             modeButton(.queue, "list.bullet")
             Spacer()
             AudioRoutePicker()
-                .frame(width: Metrics.minimumTouchTarget, height: Metrics.minimumTouchTarget)
+                .frame(minWidth: Metrics.minimumTouchTarget, minHeight: Metrics.minimumTouchTarget)
         }
         .padding(.horizontal, 20)
         .padding(.top, 4)
@@ -388,8 +393,10 @@ struct NowPlayingView: View {
             Image(systemName: symbol)
                 .font(.title3.weight(isSelected ? .bold : .regular))
                 .foregroundStyle(isSelected ? Color.appTint : .white.opacity(0.6))
-                .frame(width: Metrics.minimumTouchTarget, height: Metrics.minimumTouchTarget)
+                .frame(minWidth: Metrics.minimumTouchTarget, minHeight: Metrics.minimumTouchTarget)
         }
+        .accessibilityLabel(String(describing: target).capitalized)
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 }
 

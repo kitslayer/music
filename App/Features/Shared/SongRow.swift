@@ -48,6 +48,9 @@ struct SongRow: View {
             }
         }
         .contentShape(Rectangle())
+        // One element, one announcement. Left as separate views, VoiceOver reads the
+        // number, title, artist, badge and duration as five stops per row.
+        .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder

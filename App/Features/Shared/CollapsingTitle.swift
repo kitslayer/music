@@ -59,7 +59,7 @@ struct PlayShuffleButtons: View {
                     .font(.body.weight(.semibold))
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 46)
+                    .frame(minHeight: 46)
                     .background(Color.appTint, in: Capsule())
             }
             .buttonStyle(.plain)
@@ -69,7 +69,7 @@ struct PlayShuffleButtons: View {
                     .font(.body.weight(.semibold))
                     .foregroundStyle(Color.appTint)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 46)
+                    .frame(minHeight: 46)
                     .background(Color.appTint.opacity(0.16), in: Capsule())
             }
             .buttonStyle(.plain)
