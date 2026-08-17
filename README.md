@@ -19,9 +19,14 @@ publishes an unsigned `.ipa`; it is signed and installed on-device with
 [xtool](https://github.com/xtool-org/xtool):
 
 ```sh
-gh run download <run-id> -n Music-unsigned-ipa -D dist
-xtool install dist/Music-unsigned.ipa
+gh release download latest -p Music.ipa -D dist --clobber
+xtool install dist/Music.ipa
 ```
+
+Every push to `main` replaces the `latest` prerelease, so that command never
+needs a run id. The build is also uploaded as a workflow artifact, but the
+artifact API has returned 503 for hours at a time, which is why the release is
+the documented path.
 
 A free Apple developer certificate expires after 7 days, so re-running
 `xtool install` is the weekly refresh.
@@ -33,5 +38,5 @@ App/Core        Subsonic client, models, session, Keychain
 App/Features    One directory per screen
 ```
 
-`Navidrome.xcodeproj` uses a file-system synchronized group, so new Swift files
+`Music.xcodeproj` uses a file-system synchronized group, so new Swift files
 under `App/` are picked up without editing the project file.
