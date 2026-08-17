@@ -12,6 +12,7 @@ struct MusicApp: App {
             RootView()
                 .environment(appState)
                 .environment(appState.artwork)
+                .environment(appState.playlistArtwork)
                 .environment(appState.scope)
                 .environment(appState.userState)
                 .environment(appState.playlistStore)

@@ -8,6 +8,12 @@ import UIKit
 /// restarts on reappear -- a grey flicker field when scrolling a grid fast. The
 /// crucial part is `cached(_:_:)` being **synchronous**: a view can check it during
 /// `init` and, on a hit, render with no placeholder and no transition at all.
+///
+/// Three layers, and the third is the reason this file changed: memory, then a
+/// **permanent** copy in Application Support, then the network. `URLCache` alone was not
+/// enough — iOS purges it under storage pressure, so a downloaded album could keep its
+/// audio and lose its cover, which offline is unrecoverable. Anything downloaded gets
+/// its art kept deliberately, next to the music.
 @MainActor
 @Observable
 final class ArtworkStore {
@@ -36,6 +42,45 @@ final class ArtworkStore {
         configuration.requestCachePolicy = .returnCacheDataElseLoad
         configuration.timeoutIntervalForRequest = 12
         session = URLSession(configuration: configuration)
+    }
+
+    /// Where a size is kept on disk. Keyed by cover id, so the many tracks sharing an
+    /// album cover store it once.
+    private func fileURL(_ id: String, _ size: Size) -> URL {
+        let safe = id.replacingOccurrences(of: "/", with: "_")
+        return Paths.artwork.appendingPathComponent("\(safe)@\(size.rawValue).jpg")
+    }
+
+    /// Persists a size for offline use. Called when a track is downloaded.
+    func persist(id: String?, size: Size) async {
+        guard let id else { return }
+        let destination = fileURL(id, size)
+        guard !FileManager.default.fileExists(atPath: destination.path) else { return }
+
+        guard let image = await image(for: id, size: size),
+              let data = image.jpegData(compressionQuality: 0.85)
+        else { return }
+
+        try? data.write(to: destination, options: .atomic)
+    }
+
+    /// Every size a downloaded track needs: rows, grids and the player.
+    func persistAll(id: String?) async {
+        for size in [Size.thumb, .card, .full] {
+            await persist(id: id, size: size)
+        }
+    }
+
+    /// Bytes held for offline artwork, for the settings screen.
+    static func diskUsage() -> Int64 {
+        let contents = (try? FileManager.default.contentsOfDirectory(
+            at: Paths.artwork,
+            includingPropertiesForKeys: [.fileSizeKey]
+        )) ?? []
+        return contents.reduce(Int64(0)) { total, url in
+            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            return total + Int64(size)
+        }
     }
 
     func configure(signer: SubsonicSigner?) {
@@ -71,11 +116,25 @@ final class ArtworkStore {
         let cacheKey = "\(id)@\(size.rawValue)"
         if let existing = inFlight[cacheKey] { return await existing.value }
 
-        guard let url = url(for: id, size: size) else { return nil }
+        let file = fileURL(id, size)
+        let remote = url(for: id, size: size)
 
         let task = Task<UIImage?, Never> { [session] in
-            guard let (data, _) = try? await session.data(from: url) else { return nil }
-            // Decoding is expensive; keep it off the main actor.
+            // Disk before network, so offline art appears and an online launch does not
+            // re-fetch what is already kept. Decoding is expensive either way, so both
+            // paths do it off the main actor.
+            if let data = try? Data(contentsOf: file) {
+                if let image = await Task.detached(priority: .userInitiated) {
+                    UIImage(data: data)
+                }.value {
+                    return image
+                }
+            }
+
+            guard let remote,
+                  let (data, _) = try? await session.data(from: remote)
+            else { return nil }
+
             return await Task.detached(priority: .userInitiated) {
                 UIImage(data: data)
             }.value

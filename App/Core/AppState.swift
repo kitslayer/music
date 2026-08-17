@@ -30,6 +30,7 @@ final class AppState {
     let queueSync = QueueSync()
     let playlistSync = PlaylistSync()
     let cache = LibraryCache()
+    let playlistArtwork = PlaylistArtwork()
     let downloads = DownloadCenter()
     let reachability = Reachability()
     let outbox = ServerOutbox()

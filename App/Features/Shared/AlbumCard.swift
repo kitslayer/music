@@ -27,7 +27,7 @@ struct PlaylistCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ArtworkImage(id: playlist.coverArt, size: .card)
+            ArtworkImage(id: playlist.coverArt, size: .card, playlistID: playlist.id)
                 .aspectRatio(1, contentMode: .fit)
 
             Text(playlist.name)

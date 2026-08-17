@@ -138,9 +138,13 @@ final class DownloadCenter {
                 task.resume()
             }
 
-            // Lyrics are fetched now rather than at play time: offline is exactly
-            // when they cannot be fetched.
+            // Lyrics and cover art are fetched now rather than at play time: offline is
+            // exactly when they cannot be fetched, and a downloaded album that loses its
+            // artwork on the train is the kind of half-measure this app exists to avoid.
             Task { await cacheLyrics(for: song) }
+            Task { [weak self] in
+                await self?.appState?.artwork.persistAll(id: song.coverArt)
+            }
         }
     }
 

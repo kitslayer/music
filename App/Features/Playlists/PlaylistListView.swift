@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 
 struct PlaylistListView: View {
@@ -20,7 +21,8 @@ struct PlaylistListView: View {
                             ArtworkImage(
                                 id: playlist.coverArt,
                                 size: .thumb,
-                                cornerRadius: Metrics.radiusThumb
+                                cornerRadius: Metrics.radiusThumb,
+                                playlistID: playlist.id
                             )
                             .frame(width: Metrics.thumbPlaylist, height: Metrics.thumbPlaylist)
 
@@ -43,13 +45,6 @@ struct PlaylistListView: View {
                         Button("Rename…", systemImage: "pencil") { editing = playlist }
                         Button("Delete", systemImage: "trash", role: .destructive) {
                             deleting = playlist
-                        }
-                    }
-                    .swipeActions(edge: .trailing) {
-                        Button(role: .destructive) {
-                            deleting = playlist
-                        } label: {
-                            Label("Delete", systemImage: "trash")
                         }
                     }
                 }
@@ -133,11 +128,14 @@ struct PlaylistDetailView: View {
     @Environment(AppState.self) private var appState
     @Environment(PlaylistStore.self) private var store
     @Environment(LibraryScopeStore.self) private var scope
+    @Environment(PlaylistArtwork.self) private var artwork
 
     let playlist: PlaylistRef
 
     @State private var detail: PlaylistDetail?
     @State private var selection = SongSelection()
+    @State private var isPickingPhoto = false
+    @State private var pickedItem: PhotosPickerItem?
 
     var body: some View {
         List {
@@ -186,6 +184,19 @@ struct PlaylistDetailView: View {
                     Button("Select Tracks", systemImage: "checkmark.circle") {
                         selection.begin()
                     }
+                    Divider()
+                    Button("Choose Photo…", systemImage: "photo") {
+                        isPickingPhoto = true
+                    }
+                    if artwork.hasCustomImage(for: playlist.id) {
+                        Button(
+                            "Remove Photo",
+                            systemImage: "photo.badge.exclamationmark",
+                            role: .destructive
+                        ) {
+                            artwork.removeImage(for: playlist.id)
+                        }
+                    }
                     if let match = store.playlists.first(where: { $0.id == playlist.id }) {
                         Divider()
                         Button("Rename…", systemImage: "pencil") { editing = match }
@@ -208,6 +219,22 @@ struct PlaylistDetailView: View {
                 }
             }
         }
+        // `PhotosPicker` runs out of process and hands back only what was chosen, so it
+        // needs no photo-library permission, no usage description and no entitlement --
+        // which is why a custom cover is possible on a free account at all.
+        .photosPicker(
+            isPresented: $isPickingPhoto,
+            selection: $pickedItem,
+            matching: .images,
+            photoLibrary: .shared()
+        )
+        .task(id: pickedItem) {
+            guard let pickedItem,
+                  let data = try? await pickedItem.loadTransferable(type: Data.self)
+            else { return }
+            artwork.setImage(data: data, for: playlist.id)
+            self.pickedItem = nil
+        }
         .task { await load() }
     }
 
@@ -216,7 +243,8 @@ struct PlaylistDetailView: View {
             ArtworkImage(
                 id: detail?.coverArt ?? playlist.coverArt,
                 size: .full,
-                cornerRadius: Metrics.radiusHeader
+                cornerRadius: Metrics.radiusHeader,
+                playlistID: playlist.id
             )
             .aspectRatio(1, contentMode: .fit)
             .frame(maxWidth: Metrics.detailArtwork)
