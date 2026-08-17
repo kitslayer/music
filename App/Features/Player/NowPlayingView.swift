@@ -6,6 +6,7 @@ enum PlayerMode: String, CaseIterable {
 
 struct NowPlayingView: View {
     @Environment(AppState.self) private var appState
+    @Environment(SleepTimer.self) private var sleepTimer
     @Environment(\.dismiss) private var dismiss
 
     @State private var mode: PlayerMode = .artwork
@@ -109,6 +110,8 @@ struct NowPlayingView: View {
 
             Menu {
                 SongMenu(song: song)
+                Divider()
+                SleepTimerMenu()
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.title3)
@@ -193,6 +196,16 @@ struct NowPlayingView: View {
         }
         .padding(.top, Metrics.gutter)
         .padding(.bottom, 8)
+        .overlay(alignment: .trailing) {
+            if let label = sleepTimer.label {
+                // Stated, not hidden: an armed timer is the reason the music will
+                // stop later, and finding out by surprise is the failure case.
+                Label(label, systemImage: "moon.fill")
+                    .font(.caption2)
+                    .foregroundStyle(Color.appTint)
+                    .padding(.trailing, 12)
+            }
+        }
     }
 
     private func modeButton(_ target: PlayerMode, _ symbol: String) -> some View {
@@ -203,6 +216,38 @@ struct NowPlayingView: View {
                 .font(.title3)
                 .foregroundStyle(mode == target ? Color.appTint : .white.opacity(0.6))
                 .frame(width: Metrics.minimumTouchTarget, height: Metrics.minimumTouchTarget)
+        }
+    }
+}
+
+/// Lives in the player's overflow menu rather than in Settings: it is a thing you
+/// reach for while already listening in bed, not something you configure.
+struct SleepTimerMenu: View {
+    @Environment(SleepTimer.self) private var timer
+
+    var body: some View {
+        Menu {
+            if timer.isArmed {
+                Button("Turn Off", systemImage: "moon.slash") {
+                    timer.cancel()
+                }
+                Divider()
+            }
+
+            Button("End of Track", systemImage: "music.note") {
+                timer.armEndOfTrack()
+            }
+
+            ForEach([15, 30, 45, 60, 90], id: \.self) { minutes in
+                Button("\(minutes) Minutes") {
+                    timer.arm(minutes: minutes)
+                }
+            }
+        } label: {
+            Label(
+                timer.label.map { "Sleep Timer — \($0)" } ?? "Sleep Timer",
+                systemImage: timer.isArmed ? "moon.fill" : "moon"
+            )
         }
     }
 }

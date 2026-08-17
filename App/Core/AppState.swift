@@ -26,6 +26,7 @@ final class AppState {
     let downloads = DownloadCenter()
     let reachability = Reachability()
     let outbox = ServerOutbox()
+    let sleepTimer = SleepTimer()
     let player = PlaybackController()
 
     init() {
@@ -35,6 +36,10 @@ final class AppState {
         userState.configure(client: client)
         downloads.attach(appState: self)
         player.attach(appState: self)
+
+        sleepTimer.onFire = { [weak self] in
+            self?.player.fadeOutAndPause()
+        }
 
         // Plays recorded while offline reach the server the moment there is one.
         reachability.onCameOnline = { [weak self] in

@@ -137,6 +137,24 @@ final class PlaybackController {
         isPlaying ? pause() : play()
     }
 
+    /// Used by the sleep timer. Restores the volume afterwards, so the next manual
+    /// play is not silent -- the single most likely bug in a fade implementation.
+    func fadeOutAndPause(over duration: Double = 6) {
+        guard isPlaying else { return }
+
+        Task { [weak self] in
+            let steps = 30
+            for step in 1...steps {
+                guard let self, isPlaying else { return }
+                player.volume = Float(1 - Double(step) / Double(steps))
+                try? await Task.sleep(for: .seconds(duration / Double(steps)))
+            }
+            guard let self else { return }
+            pause()
+            player.volume = 1
+        }
+    }
+
     func next() {
         guard queue.advance() else {
             pause()
@@ -400,6 +418,8 @@ final class PlaybackController {
             }
             return
         }
+
+        appState?.sleepTimer.trackDidFinish()
 
         queue.position = orderIndex
         duration = Double(queue.current?.duration ?? 0)
