@@ -115,6 +115,10 @@ final class PlaylistSync {
         lastSummary = queued == 0
             ? "Everything is on this phone"
             : "Downloading \(queued) \(queued == 1 ? "track" : "tracks")"
+
+        if queued > 0 {
+            await Diagnostics.shared.record("playlist sync", "queued \(queued) tracks")
+        }
     }
 
     /// Rough projection for the settings screen, so 20 GB is never a surprise.

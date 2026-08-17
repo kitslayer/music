@@ -73,6 +73,12 @@ struct SettingsView: View {
                 }
             }
 
+            Section {
+                NavigationLink(value: Destination.diagnostics) {
+                    Text("Diagnostics")
+                }
+            }
+
             Section("About") {
                 LabeledContent("Version", value: version)
             }

@@ -18,6 +18,7 @@ enum Destination: Hashable {
     case requestMusic(String)
     case requestSettings
     case offlineSettings
+    case diagnostics
 }
 
 extension View {
@@ -59,6 +60,8 @@ extension View {
                 MusicRequestSettingsView()
             case .offlineSettings:
                 OfflineSettingsView()
+            case .diagnostics:
+                DiagnosticsView()
             }
         }
     }

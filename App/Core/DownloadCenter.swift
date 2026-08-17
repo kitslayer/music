@@ -197,8 +197,10 @@ final class DownloadCenter {
     }
 
     func taskFailed(songID: String) {
+        let title = catalog.pending[songID]?.song.title ?? songID
         progress.removeValue(forKey: songID)
         Task {
+            await Diagnostics.shared.record("download", "failed: \(title)")
             catalog = await store.cancelPending(songID: songID)
             isDownloading = !progress.isEmpty
         }

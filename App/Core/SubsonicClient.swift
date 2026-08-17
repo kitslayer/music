@@ -176,6 +176,9 @@ actor SubsonicClient {
             let (data, _) = try await session.data(from: url)
             return data
         } catch {
+            // Recorded rather than only thrown: most callers use `try?` so the screen
+            // can fall back to cache, which means the reason would otherwise vanish.
+            await Diagnostics.shared.record(endpoint, error.localizedDescription)
             throw ClientError.transport(error.localizedDescription)
         }
     }
@@ -224,6 +227,7 @@ actor SubsonicClient {
             let (data, _) = try await session.data(for: request)
             return data
         } catch {
+            await Diagnostics.shared.record(endpoint, error.localizedDescription)
             throw ClientError.transport(error.localizedDescription)
         }
     }
