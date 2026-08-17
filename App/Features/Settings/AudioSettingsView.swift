@@ -116,12 +116,15 @@ struct AudioSettingsView: View {
                     get: { Double(audio.gains[index]) },
                     set: { audio.setGain(Float($0), forBand: index) }
                 ),
-                in: Double(AudioSettings.gainRange.lowerBound)
-                    ...Double(AudioSettings.gainRange.upperBound),
+                in: Self.gainBounds,
                 step: 0.5
             )
         }
     }
+
+    /// A stored range: a `...` operator broken across lines does not parse.
+    private static let gainBounds =
+        Double(AudioSettings.gainRange.lowerBound)...Double(AudioSettings.gainRange.upperBound)
 
     private func gainLabel(_ gain: Float) -> String {
         gain > 0 ? "+\(String(format: "%.1f", gain)) dB" : "\(String(format: "%.1f", gain)) dB"
