@@ -73,12 +73,15 @@ jobs:
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               run: |
                   cp "$RUNNER_TEMP/Music-unsigned.ipa" "$RUNNER_TEMP/Music.ipa"
+                  # Notes built in a variable: a literal newline inside the YAML
+                  # block scalar has to stay indented, and an unindented
+                  # continuation line silently invalidates the whole workflow.
+                  printf 'Ad-hoc signed. Install with `xtool install Music.ipa`.\n\nCommit %s\n' \
+                    "${GITHUB_SHA:0:7}" > "$RUNNER_TEMP/notes.md"
                   gh release delete latest --repo "$GITHUB_REPOSITORY" --yes || true
                   gh release create latest \
                     "$RUNNER_TEMP/Music.ipa" \
                     --repo "$GITHUB_REPOSITORY" \
                     --title "Latest build" \
-                    --notes "Ad-hoc signed. Install with: xtool install Music.ipa
-
-Commit ${GITHUB_SHA:0:7}" \
+                    --notes-file "$RUNNER_TEMP/notes.md" \
                     --prerelease
