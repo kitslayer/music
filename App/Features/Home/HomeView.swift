@@ -63,6 +63,7 @@ struct HomeView: View {
                                     .frame(width: Metrics.cardWidth)
                             }
                             .buttonStyle(.plain)
+                            .albumMenu(album)
                         }
                     }
                     .scrollTargetLayout()

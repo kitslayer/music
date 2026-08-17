@@ -34,6 +34,15 @@ struct AlbumDetailView: View {
         }
         .listStyle(.plain)
         .collapsingTitle(album.name)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                FavoriteButton(
+                    id: album.id,
+                    kind: .album,
+                    serverValue: detail?.starred != nil
+                )
+            }
+        }
         .task { await load() }
     }
 
@@ -45,36 +54,21 @@ struct AlbumDetailView: View {
             .sorted { $0.number < $1.number }
     }
 
+    /// Tapping any track queues the whole album, in album order, even inside a
+    /// per-disc section -- so track 1 of disc 2 continues into disc 2 track 2.
     @ViewBuilder
     private func songRows(_ list: [Song]) -> some View {
-        ForEach(Array(list.enumerated()), id: \.element.id) { index, song in
-            Button {
-                play(from: song)
-            } label: {
-                SongRow(
-                    song: song,
-                    style: .numbered(song.track ?? index + 1),
-                    isCurrent: appState.player.currentSong?.id == song.id
-                )
-            }
-            .buttonStyle(.plain)
+        ForEach(list) { song in
+            PlayableSongRow(
+                songs: songs,
+                index: songs.firstIndex(of: song) ?? 0,
+                source: album.name,
+                style: .numbered(song.track ?? 1),
+                showsNavigation: false
+            )
             // Separators start at the title, not under the number column.
             .alignmentGuide(.listRowSeparatorLeading) { _ in 36 }
-            .contextMenu {
-                Button("Play Next", systemImage: "text.insert") {
-                    appState.player.playNext([song])
-                }
-                Button("Add to Queue", systemImage: "text.append") {
-                    appState.player.append([song])
-                }
-            }
         }
-    }
-
-    private func play(from song: Song) {
-        let all = songs
-        guard let index = all.firstIndex(where: { $0.id == song.id }) else { return }
-        appState.player.play(songs: all, startingAt: index, source: album.name)
     }
 
     private var header: some View {

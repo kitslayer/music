@@ -22,12 +22,14 @@ final class AppState {
     let client = SubsonicClient()
     let artwork = ArtworkStore()
     let scope = LibraryScopeStore()
+    let userState = UserStateStore()
     let player = PlaybackController()
 
     init() {
         // Directories must exist before anything touches disk, and before a
         // background download session can be relaunched into.
         Paths.bootstrap()
+        userState.configure(client: client)
         player.attach(appState: self)
         Task { await restore() }
     }
@@ -84,6 +86,7 @@ final class AppState {
         signer = nil
         await client.configure(nil)
         artwork.configure(signer: nil)
+        userState.reset()
         phase = .needsSetup
     }
 

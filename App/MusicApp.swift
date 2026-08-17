@@ -10,6 +10,7 @@ struct MusicApp: App {
                 .environment(appState)
                 .environment(appState.artwork)
                 .environment(appState.scope)
+                .environment(appState.userState)
                 .preferredColorScheme(.dark)
                 .tint(.appTint)
         }

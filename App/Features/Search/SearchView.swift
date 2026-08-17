@@ -115,14 +115,18 @@ struct SearchView: View {
                                 }
                             }
                         }
+                        .albumFavorite(album)
                     }
                 }
             }
 
             if let songs = results?.songs, !songs.isEmpty {
+                // Capped at 20, then played as that list: results past the cap are
+                // not on screen, so queueing them would be a surprise.
+                let visible = Array(songs.prefix(20))
                 Section("Songs") {
-                    ForEach(songs.prefix(20)) { song in
-                        SongRow(song: song, style: .withArtwork)
+                    ForEach(Array(visible.enumerated()), id: \.element.id) { index, _ in
+                        PlayableSongRow(songs: visible, index: index, source: "Search")
                     }
                 }
             }

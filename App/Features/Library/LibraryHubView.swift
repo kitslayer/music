@@ -35,6 +35,7 @@ struct LibraryHubView: View {
                                     AlbumCard(album: album)
                                 }
                                 .buttonStyle(.plain)
+                                .albumMenu(album)
                             }
                         }
                         .listRowInsets(EdgeInsets(

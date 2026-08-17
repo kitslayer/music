@@ -10,6 +10,9 @@ struct ArtistDetailView: View {
 
     @State private var detail: ArtistDetail?
     @State private var topSongs: [Song] = []
+    /// Every track by the artist, in album order. Loaded lazily by Play/Shuffle
+    /// because it costs one request per album and most visits never press either.
+    @State private var isGatheringDiscography = false
 
     var body: some View {
         ScrollView {
@@ -24,10 +27,22 @@ struct ArtistDetailView: View {
                             .font(.title3.weight(.semibold))
                             .padding(.horizontal, Metrics.gutter)
 
-                        ForEach(topSongs) { song in
-                            SongRow(song: song, style: .withArtwork)
+                        ForEach(Array(topSongs.enumerated()), id: \.element.id) { index, song in
+                            Button {
+                                appState.player.play(
+                                    songs: topSongs, startingAt: index, source: artist.name
+                                )
+                            } label: {
+                                SongRow(
+                                    song: song,
+                                    style: .withArtwork,
+                                    isCurrent: appState.player.currentSong?.id == song.id
+                                )
                                 .padding(.horizontal, Metrics.gutter)
                                 .padding(.vertical, 6)
+                            }
+                            .buttonStyle(.plain)
+                            .contextMenu { SongMenu(song: song, showsNavigation: false) }
                         }
                     }
                 }
@@ -79,6 +94,15 @@ struct ArtistDetailView: View {
             .padding(.bottom, 24)
         }
         .collapsingTitle(artist.name)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                FavoriteButton(
+                    id: artist.id,
+                    kind: .artist,
+                    serverValue: detail?.starred != nil
+                )
+            }
+        }
         .task { await load() }
     }
 
@@ -102,11 +126,48 @@ struct ArtistDetailView: View {
                 }
             }
 
-            PlayShuffleButtons(onPlay: {}, onShuffle: {})
-                .padding(.horizontal, Metrics.gutter)
+            PlayShuffleButtons(
+                onPlay: { playDiscography(shuffled: false) },
+                onShuffle: { playDiscography(shuffled: true) },
+                isBusy: isGatheringDiscography
+            )
+            .padding(.horizontal, Metrics.gutter)
         }
         .frame(maxWidth: .infinity)
         .padding(.top, Metrics.gutter)
+    }
+
+    /// Albums are fetched concurrently but the result is assembled in release order,
+    /// so "Play" starts with the earliest record rather than whichever request
+    /// happened to answer first.
+    private func playDiscography(shuffled: Bool) {
+        guard !isGatheringDiscography, let albums = detail?.albums, !albums.isEmpty else { return }
+        isGatheringDiscography = true
+
+        Task {
+            let ordered = albums.sorted { ($0.year ?? 0) < ($1.year ?? 0) }
+            var byAlbum: [String: [Song]] = [:]
+
+            await withTaskGroup(of: (String, [Song]).self) { group in
+                for album in ordered {
+                    group.addTask { [client = appState.client] in
+                        let detail = try? await client.albumDetail(id: album.id)
+                        return (album.id, detail?.songs ?? [])
+                    }
+                }
+                for await (id, songs) in group {
+                    byAlbum[id] = songs
+                }
+            }
+
+            let songs = ordered.flatMap { byAlbum[$0.id] ?? [] }
+            isGatheringDiscography = false
+            guard !songs.isEmpty else { return }
+
+            appState.player.play(
+                songs: songs, startingAt: 0, source: artist.name, shuffled: shuffled
+            )
+        }
     }
 
     private func load() async {

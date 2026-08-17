@@ -43,6 +43,9 @@ extension View {
 struct PlayShuffleButtons: View {
     let onPlay: () -> Void
     let onShuffle: () -> Void
+    /// Set while the track list is still being gathered, so a slow artist page shows
+    /// progress instead of appearing to have ignored the tap.
+    var isBusy = false
 
     var body: some View {
         HStack(spacing: Metrics.itemSpacing) {
@@ -57,5 +60,12 @@ struct PlayShuffleButtons: View {
         }
         .buttonStyle(.borderedProminent)
         .controlSize(.large)
+        .disabled(isBusy)
+        .overlay {
+            if isBusy {
+                ProgressView()
+                    .tint(.white)
+            }
+        }
     }
 }

@@ -42,6 +42,7 @@ struct AlbumListView: View {
                             AlbumCard(album: album)
                         }
                         .buttonStyle(.plain)
+                        .albumMenu(album)
                     }
                 }
                 .padding(.horizontal, Metrics.gutter)

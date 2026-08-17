@@ -32,20 +32,35 @@ struct FavoritesView: View {
                                 }
                             }
                         }
+                        .albumFavorite(album)
                     }
                 }
             }
 
             if let songs = starred?.songs, !songs.isEmpty {
                 Section("Songs") {
-                    ForEach(songs) { song in
-                        SongRow(song: song, style: .withArtwork)
+                    ForEach(Array(songs.enumerated()), id: \.element.id) { index, _ in
+                        PlayableSongRow(songs: songs, index: index, source: "Favourites")
                     }
                 }
             }
         }
         .listStyle(.plain)
         .navigationTitle("Favourites")
+        .toolbar {
+            if let songs = starred?.songs, !songs.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        appState.player.play(
+                            songs: songs, startingAt: 0, source: "Favourites", shuffled: true
+                        )
+                    } label: {
+                        Image(systemName: "shuffle")
+                    }
+                    .accessibilityLabel("Shuffle favourites")
+                }
+            }
+        }
         .overlay {
             if isLoading, starred == nil { ProgressView() }
         }

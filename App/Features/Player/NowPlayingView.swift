@@ -70,6 +70,15 @@ struct NowPlayingView: View {
                 .scaleEffect(player.isPlaying ? 1 : 0.86)
                 .animation(.spring(duration: 0.35), value: player.isPlaying)
                 .matchedGeometryEffect(id: "artwork", in: modeNamespace)
+                .overlay(alignment: .bottom) {
+                    if let song = player.currentSong {
+                        RatingStars(songID: song.id, serverRating: song.userRating)
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 14)
+                            .background(.black.opacity(0.35), in: Capsule())
+                            .offset(y: 26)
+                    }
+                }
 
             case .queue:
                 QueueView()
@@ -83,15 +92,34 @@ struct NowPlayingView: View {
         .animation(.easeInOut(duration: 0.25), value: mode)
     }
 
+    /// The star sits beside the title rather than in the transport row: it belongs to
+    /// the track, and the transport row is already at five controls.
     private func metadata(_ song: Song) -> some View {
-        VStack(spacing: 2) {
-            Text(song.title)
-                .font(.title3.weight(.bold))
-                .lineLimit(1)
-            Text(song.artist ?? "")
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(song.title)
+                    .font(.title3.weight(.bold))
+                    .lineLimit(1)
+                Text(song.artist ?? "")
+                    .font(.title3)
+                    .foregroundStyle(.white.opacity(0.7))
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Menu {
+                SongMenu(song: song)
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.title3)
+                    .foregroundStyle(.white.opacity(0.7))
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+            }
+
+            FavoriteButton(id: song.id, kind: .song, serverValue: song.isFavorite)
                 .font(.title3)
-                .foregroundStyle(.white.opacity(0.7))
-                .lineLimit(1)
+                .frame(width: 32, height: 32)
         }
         .padding(.horizontal, 24)
         .padding(.top, Metrics.itemSpacing)

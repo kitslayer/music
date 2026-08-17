@@ -34,6 +34,11 @@ struct ArtistListView: View {
                                 }
                             }
                         }
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            FavoriteSwipeButton(
+                                id: artist.id, kind: .artist, serverValue: artist.starred != nil
+                            )
+                        }
                     }
                 }
             }

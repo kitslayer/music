@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct SongRow: View {
+    @Environment(UserStateStore.self) private var userState
+
     enum Style {
         /// Album detail: track number, no artwork, no album line.
         case numbered(Int)
@@ -31,7 +33,7 @@ struct SongRow: View {
 
             Spacer(minLength: 8)
 
-            if song.isFavorite {
+            if userState.isStarred(song) {
                 Image(systemName: "star.fill")
                     .font(.caption)
                     .foregroundStyle(Color.appTint)
