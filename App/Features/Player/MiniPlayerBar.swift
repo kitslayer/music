@@ -4,13 +4,18 @@ import SwiftUI
 struct MiniPlayerBar: View {
     @Environment(AppState.self) private var appState
     @Binding var showsPlayer: Bool
+    /// True when hosted in the tab bar's accessory slot, which draws its own
+    /// background and separator -- drawing a second one there looks like a seam.
+    var isSystemAccessory = false
 
     private var player: PlaybackController { appState.player }
 
     var body: some View {
         if let song = player.currentSong {
             VStack(spacing: 0) {
-                Divider()
+                if !isSystemAccessory {
+                    Divider()
+                }
 
                 HStack(spacing: Metrics.itemSpacing) {
                     ArtworkImage(
@@ -46,9 +51,10 @@ struct MiniPlayerBar: View {
                     }
                     .buttonStyle(.plain)
                 }
-                .padding(.horizontal, Metrics.gutter)
-                .frame(height: Metrics.miniPlayerHeight)
-                .background(.ultraThinMaterial)
+                .padding(.horizontal, isSystemAccessory ? 8 : Metrics.gutter)
+                .frame(height: isSystemAccessory ? nil : Metrics.miniPlayerHeight)
+                .background(isSystemAccessory ? AnyShapeStyle(.clear)
+                                              : AnyShapeStyle(.ultraThinMaterial))
                 .contentShape(Rectangle())
                 .onTapGesture { showsPlayer = true }
                 // Swipe up to expand, sideways to skip -- the gestures Plexamp and

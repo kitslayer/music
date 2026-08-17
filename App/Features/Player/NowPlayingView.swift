@@ -7,41 +7,140 @@ enum PlayerMode: String, CaseIterable {
 struct NowPlayingView: View {
     @Environment(AppState.self) private var appState
     @Environment(SleepTimer.self) private var sleepTimer
+    @Environment(DownloadCenter.self) private var downloads
     @Environment(\.dismiss) private var dismiss
 
     @State private var mode: PlayerMode = .artwork
     @State private var scrubValue: Double?
+    @State private var dragOffset: CGFloat = 0
     @Namespace private var modeNamespace
 
     private var player: PlaybackController { appState.player }
 
     var body: some View {
+        // Its own stack: without one, the artist name and the menu's "Go to Album" are
+        // links with nowhere to push, which is to say dead. Browsing from inside the
+        // player is also what Plexamp does.
+        NavigationStack {
+            playerBody
+                .toolbar(.hidden, for: .navigationBar)
+                .musicDestinations()
+        }
+    }
+
+    private var playerBody: some View {
         VStack(spacing: 0) {
-            grabber
+            topBar
+                .gesture(dismissDrag)
 
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Only in artwork mode: in queue and lyrics mode this area is a
+                // scroller, and a drag gesture over it would steal the scroll.
+                // `.subviews` is how a gesture is switched off -- there is no
+                // `gesture(_:)` overload that takes an optional.
+                .gesture(dismissDrag, including: mode == .artwork ? .all : .subviews)
 
             if let song = player.currentSong {
-                metadata(song)
+                VStack(spacing: 0) {
+                    metadata(song)
+                    detailLine(song)
+                }
+                .gesture(dismissDrag)
+
                 seekBar
                 transport
-                modeSwitcher
+                volumeRow
+                bottomRow
             }
         }
         .background(alignment: .top) { backdrop }
-        .presentationDragIndicator(.hidden)
+        .offset(y: dragOffset)
+        // Shrinks slightly as it is pulled, which is what makes the drag read as
+        // "putting it away" rather than sliding a page.
+        .scaleEffect(1 - min(dragOffset / 3000, 0.06))
+        .onAppear { dragOffset = 0 }
     }
 
-    private var grabber: some View {
-        Capsule()
-            .fill(.white.opacity(0.3))
-            .frame(width: 36, height: 5)
-            .padding(.top, 8)
-            .padding(.bottom, 4)
+    // MARK: - Dismissal
+
+    /// `fullScreenCover` has no interactive dismiss of its own -- only `sheet` does --
+    /// so the gesture is explicit. A sheet was the alternative and was rejected: it
+    /// cannot go edge to edge, and this screen is mostly artwork.
+    private var dismissDrag: some Gesture {
+        DragGesture(minimumDistance: 12)
+            .onChanged { value in
+                // Downward only. Dragging up is not a dismissal, and allowing it
+                // would let the screen be pulled off the top.
+                dragOffset = max(0, value.translation.height)
+            }
+            .onEnded { value in
+                // Distance *or* speed, so a quick flick works without travelling far.
+                let isFarEnough = value.translation.height > 130
+                let isFastEnough = value.predictedEndTranslation.height > 320
+
+                if isFarEnough || isFastEnough {
+                    dismiss()
+                } else {
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+                        dragOffset = 0
+                    }
+                }
+            }
+    }
+
+    /// A visible close button as well as the gesture: the previous version had only a
+    /// 5pt capsule that happened to be tappable, which is not an affordance.
+    private var topBar: some View {
+        HStack(spacing: Metrics.itemSpacing) {
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "chevron.down")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.8))
+                    .frame(width: Metrics.minimumTouchTarget, height: Metrics.minimumTouchTarget)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Close player")
+
+            VStack(spacing: 1) {
+                Text("Playing From")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.5))
+                Text(source)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .lineLimit(1)
+            }
             .frame(maxWidth: .infinity)
-            .contentShape(Rectangle())
-            .onTapGesture { dismiss() }
+
+            if let song = player.currentSong {
+                Menu {
+                    SongMenu(song: song)
+                    Divider()
+                    SleepTimerMenu()
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.8))
+                        .frame(
+                            width: Metrics.minimumTouchTarget,
+                            height: Metrics.minimumTouchTarget
+                        )
+                        .contentShape(Rectangle())
+                }
+            } else {
+                Spacer().frame(width: Metrics.minimumTouchTarget)
+            }
+        }
+        .padding(.horizontal, 8)
+        .contentShape(Rectangle())
+    }
+
+    private var source: String {
+        let described = player.queue.sourceDescription
+        return described.isEmpty ? "Queue" : described
     }
 
     /// Blurred artwork behind everything: the only place colour comes from content.
@@ -71,15 +170,6 @@ struct NowPlayingView: View {
                 .scaleEffect(player.isPlaying ? 1 : 0.86)
                 .animation(.spring(duration: 0.35), value: player.isPlaying)
                 .matchedGeometryEffect(id: "artwork", in: modeNamespace)
-                .overlay(alignment: .bottom) {
-                    if let song = player.currentSong {
-                        RatingStars(songID: song.id, serverRating: song.userRating)
-                            .padding(.vertical, 8)
-                            .padding(.horizontal, 14)
-                            .background(.black.opacity(0.35), in: Capsule())
-                            .offset(y: 26)
-                    }
-                }
 
             case .queue:
                 QueueView()
@@ -93,39 +183,87 @@ struct NowPlayingView: View {
         .animation(.easeInOut(duration: 0.25), value: mode)
     }
 
-    /// The star sits beside the title rather than in the transport row: it belongs to
-    /// the track, and the transport row is already at five controls.
     private func metadata(_ song: Song) -> some View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(song.title)
                     .font(.title3.weight(.bold))
                     .lineLimit(1)
-                Text(song.artist ?? "")
-                    .font(.title3)
-                    .foregroundStyle(.white.opacity(0.7))
-                    .lineLimit(1)
+
+                // Tappable, because "who is this" is the most common next question and
+                // the menu is two taps away.
+                if let artist = song.artist {
+                    if let artistId = song.artistId {
+                        NavigationLink(value: Destination.artist(
+                            ArtistRef(id: artistId, name: artist)
+                        )) {
+                            artistLabel(artist)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        artistLabel(artist)
+                    }
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Menu {
-                SongMenu(song: song)
-                Divider()
-                SleepTimerMenu()
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.title3)
-                    .foregroundStyle(.white.opacity(0.7))
-                    .frame(width: 32, height: 32)
-                    .contentShape(Rectangle())
-            }
-
             FavoriteButton(id: song.id, kind: .song, serverValue: song.isFavorite)
                 .font(.title3)
-                .frame(width: 32, height: 32)
+                .frame(width: 36, height: 36)
         }
         .padding(.horizontal, 24)
         .padding(.top, Metrics.itemSpacing)
+    }
+
+    private func artistLabel(_ artist: String) -> some View {
+        Text(artist)
+            .font(.title3)
+            .foregroundStyle(.white.opacity(0.7))
+            .lineLimit(1)
+    }
+
+    /// The quiet line Plexamp gets right: what you are actually hearing, and where you
+    /// are in the queue. Every part is omitted when unknown rather than shown as a
+    /// placeholder.
+    private func detailLine(_ song: Song) -> some View {
+        HStack(spacing: 6) {
+            if downloads.isDownloaded(song.id) {
+                Label("Downloaded", systemImage: "arrow.down.circle.fill")
+                    .labelStyle(.iconOnly)
+                    .foregroundStyle(Color.appTint)
+            }
+
+            Text(qualityText(song))
+
+            if player.queue.order.count > 1 {
+                Text("·")
+                Text("\(player.queue.position + 1) of \(player.queue.order.count)")
+                    .monospacedDigit()
+            }
+
+            if let label = sleepTimer.label {
+                Text("·")
+                Label(label, systemImage: "moon.fill")
+                    .foregroundStyle(Color.appTint)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .font(.caption2)
+        .foregroundStyle(.white.opacity(0.55))
+        .padding(.horizontal, 24)
+        .padding(.top, 5)
+    }
+
+    private func qualityText(_ song: Song) -> String {
+        var parts: [String] = []
+        if let suffix = song.suffix { parts.append(suffix.uppercased()) }
+        // Lossless bitrates are variable and the reported number is an average, so it
+        // is more honest to show the container alone than a precise-looking figure.
+        if let rate = song.bitRate, rate > 0, song.suffix?.lowercased() != "flac" {
+            parts.append("\(rate) kbps")
+        }
+        return parts.isEmpty ? "Streaming" : parts.joined(separator: " · ")
     }
 
     private var seekBar: some View {
@@ -154,7 +292,7 @@ struct NowPlayingView: View {
             .foregroundStyle(.white.opacity(0.6))
         }
         .padding(.horizontal, 24)
-        .padding(.top, 8)
+        .padding(.top, 6)
     }
 
     private var transport: some View {
@@ -185,27 +323,37 @@ struct NowPlayingView: View {
             }
         }
         .foregroundStyle(.white)
-        .padding(.top, Metrics.gutter)
+        .padding(.top, Metrics.itemSpacing)
     }
 
-    private var modeSwitcher: some View {
-        HStack(spacing: 44) {
+    /// The system slider, flanked by the usual two icons so it reads as volume rather
+    /// than a second progress bar.
+    private var volumeRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "speaker.fill")
+            SystemVolumeSlider()
+            Image(systemName: "speaker.wave.3.fill")
+        }
+        .font(.caption2)
+        .foregroundStyle(.white.opacity(0.5))
+        .padding(.horizontal, 24)
+        .padding(.top, Metrics.itemSpacing)
+    }
+
+    private var bottomRow: some View {
+        HStack {
             modeButton(.lyrics, "quote.bubble")
+            Spacer()
             modeButton(.artwork, "photo")
+            Spacer()
             modeButton(.queue, "list.bullet")
+            Spacer()
+            AudioRoutePicker()
+                .frame(width: Metrics.minimumTouchTarget, height: Metrics.minimumTouchTarget)
         }
-        .padding(.top, Metrics.gutter)
-        .padding(.bottom, 8)
-        .overlay(alignment: .trailing) {
-            if let label = sleepTimer.label {
-                // Stated, not hidden: an armed timer is the reason the music will
-                // stop later, and finding out by surprise is the failure case.
-                Label(label, systemImage: "moon.fill")
-                    .font(.caption2)
-                    .foregroundStyle(Color.appTint)
-                    .padding(.trailing, 12)
-            }
-        }
+        .padding(.horizontal, 32)
+        .padding(.top, 4)
+        .padding(.bottom, 4)
     }
 
     private func modeButton(_ target: PlayerMode, _ symbol: String) -> some View {
