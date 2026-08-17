@@ -305,6 +305,22 @@ struct StructuredLyrics: Codable, Hashable, Sendable {
     var lines: [LyricLine] { line ?? [] }
 }
 
+struct CreatedPlaylist: Decodable, PayloadKeyed, Sendable {
+    let playlist: Playlist
+    static var payloadKey: String { "playlist" }
+
+    /// The payload *is* the playlist, so the key is consumed by the envelope and this
+    /// wrapper decodes from the same object rather than from a nested one.
+    init(from decoder: Decoder) throws {
+        playlist = try Playlist(from: decoder)
+    }
+}
+
+struct SimilarSongs: Decodable, PayloadKeyed, Sendable {
+    let song: [Song]?
+    static var payloadKey: String { "similarSongs2" }
+}
+
 struct LyricLine: Codable, Hashable, Sendable {
     /// Milliseconds from the start of the track. Absent on unsynced lyrics.
     var start: Int?

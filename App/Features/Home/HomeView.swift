@@ -33,6 +33,19 @@ struct HomeView: View {
             .navigationTitle("Home")
             .musicDestinations()
             .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        Task {
+                            let songs = (try? await appState.client.randomSongs(
+                                size: 100, scope: scope.scope
+                            )) ?? []
+                            appState.startRadio(named: "Shuffle", songs: songs)
+                        }
+                    } label: {
+                        Image(systemName: "shuffle")
+                    }
+                    .accessibilityLabel("Shuffle library")
+                }
                 ToolbarItem(placement: .topBarTrailing) { LibraryScopeMenu() }
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink(value: Destination.settings) {

@@ -4,6 +4,8 @@ import SwiftUI
 /// owned, named. A fourth tab would be a destination rather than a mode, which is
 /// why Downloads and Settings live inside Library and Home instead.
 struct MainTabView: View {
+    @Environment(PlaylistStore.self) private var playlistStore
+
     @State private var showsPlayer = false
 
     var body: some View {
@@ -22,6 +24,28 @@ struct MainTabView: View {
         }
         .fullScreenCover(isPresented: $showsPlayer) {
             NowPlayingView()
+        }
+        .overlay(alignment: .bottom) { toast }
+        .animation(.snappy(duration: 0.25), value: playlistStore.lastMessage)
+    }
+
+    /// Added a song to a playlist? Say so. Menus give no feedback of their own, so
+    /// without this the action is indistinguishable from nothing happening.
+    @ViewBuilder
+    private var toast: some View {
+        if let message = playlistStore.lastMessage {
+            Text(message)
+                .font(.footnote.weight(.medium))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(.regularMaterial, in: Capsule())
+                .shadow(radius: 8, y: 2)
+                .padding(.bottom, 120)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .task(id: message) {
+                    try? await Task.sleep(for: .seconds(2.2))
+                    playlistStore.lastMessage = nil
+                }
         }
     }
 

@@ -14,6 +14,7 @@ struct MusicApp: App {
                 .environment(appState.artwork)
                 .environment(appState.scope)
                 .environment(appState.userState)
+                .environment(appState.playlistStore)
                 .environment(appState.downloads)
                 .environment(appState.reachability)
                 .environment(appState.sleepTimer)

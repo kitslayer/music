@@ -5,6 +5,7 @@ import SwiftUI
 /// List fights it.
 struct ArtistDetailView: View {
     @Environment(AppState.self) private var appState
+    @Environment(LibraryScopeStore.self) private var scope
 
     let artist: ArtistRef
 
@@ -102,6 +103,15 @@ struct ArtistDetailView: View {
                     serverValue: detail?.starred != nil
                 )
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    startArtistRadio()
+                } label: {
+                    Image(systemName: "dot.radiowaves.left.and.right")
+                }
+                .disabled(isGatheringDiscography)
+                .accessibilityLabel("Start artist radio")
+            }
         }
         .task { await load() }
     }
@@ -167,6 +177,18 @@ struct ArtistDetailView: View {
             appState.player.play(
                 songs: songs, startingAt: 0, source: artist.name, shuffled: shuffled
             )
+        }
+    }
+
+    /// Reuses the same busy flag as Play/Shuffle: both walk every album, and showing
+    /// two independent spinners for one kind of work would be noise.
+    private func startArtistRadio() {
+        guard !isGatheringDiscography else { return }
+        isGatheringDiscography = true
+        Task {
+            let mix = await appState.radio.artistMix(artist, scope: scope.scope)
+            isGatheringDiscography = false
+            appState.startRadio(named: "\(artist.name) Radio", songs: mix)
         }
     }
 

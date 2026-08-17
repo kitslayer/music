@@ -56,7 +56,10 @@ enum SubsonicAuth {
         username: String,
         token: String,
         salt: String,
-        query: [String: String?]
+        query: [String: String?],
+        // Repeated parameters -- `songId=a&songId=b` -- which a dictionary cannot
+        // express and `createPlaylist`/`updatePlaylist` are defined in terms of.
+        repeated: [URLQueryItem] = []
     ) -> URL? {
         var components = URLComponents(
             url: baseURL.appendingPathComponent("rest/\(endpoint)"),
@@ -74,6 +77,7 @@ enum SubsonicAuth {
         items.append(contentsOf: query.compactMap { key, value in
             value.map { URLQueryItem(name: key, value: $0) }
         })
+        items.append(contentsOf: repeated)
 
         components?.queryItems = items
         return components?.url
@@ -140,7 +144,11 @@ actor SubsonicClient {
 
     // MARK: - Plumbing
 
-    private func dataURL(_ endpoint: String, _ query: [String: String?] = [:]) throws -> URL {
+    private func dataURL(
+        _ endpoint: String,
+        _ query: [String: String?] = [:],
+        _ repeated: [URLQueryItem] = []
+    ) throws -> URL {
         guard let credentials else { throw ClientError.notConfigured }
 
         let salt = SubsonicAuth.makeSalt()
@@ -150,15 +158,20 @@ actor SubsonicClient {
             username: credentials.username,
             token: SubsonicAuth.token(password: credentials.password, salt: salt),
             salt: salt,
-            query: query
+            query: query,
+            repeated: repeated
         )
 
         guard let url else { throw ClientError.notConfigured }
         return url
     }
 
-    private func fetch(_ endpoint: String, _ query: [String: String?]) async throws -> Data {
-        let url = try dataURL(endpoint, query)
+    private func fetch(
+        _ endpoint: String,
+        _ query: [String: String?],
+        _ repeated: [URLQueryItem] = []
+    ) async throws -> Data {
+        let url = try dataURL(endpoint, query, repeated)
         do {
             let (data, _) = try await session.data(from: url)
             return data
@@ -170,9 +183,10 @@ actor SubsonicClient {
     private func get<T: Decodable & PayloadKeyed>(
         _ endpoint: String,
         query: [String: String?] = [:],
+        repeated: [URLQueryItem] = [],
         as _: T.Type
     ) async throws -> T {
-        let data = try await fetch(endpoint, query)
+        let data = try await fetch(endpoint, query, repeated)
 
         let envelope: Envelope<T>
         do {
@@ -191,8 +205,12 @@ actor SubsonicClient {
     }
 
     /// For endpoints whose only meaningful answer is success or failure.
-    private func perform(_ endpoint: String, query: [String: String?] = [:]) async throws {
-        let data = try await fetch(endpoint, query)
+    private func perform(
+        _ endpoint: String,
+        query: [String: String?] = [:],
+        repeated: [URLQueryItem] = []
+    ) async throws {
+        let data = try await fetch(endpoint, query, repeated)
 
         guard let decoded = try? decoder.decode(StatusOnly.self, from: data) else {
             throw ClientError.server("Unexpected response from server.")
@@ -415,6 +433,71 @@ actor SubsonicClient {
                 "time": listenedAt.map { String(Int($0.timeIntervalSince1970 * 1000)) },
             ]
         )
+    }
+
+    // MARK: - Playlists (read-write)
+
+    /// Returns the created playlist, so the caller can navigate straight to it.
+    ///
+    /// Note the two-step: Subsonic's `createPlaylist` accepts songs, but Navidrome
+    /// does not return the entries in that response, and a name is not unique enough
+    /// to look the playlist up again afterwards. Verified against the live server:
+    /// the response carries the new id, which is enough.
+    func createPlaylist(name: String, songIDs: [String] = []) async throws -> Playlist {
+        try await get(
+            "createPlaylist.view",
+            query: ["name": name],
+            repeated: songIDs.map { URLQueryItem(name: "songId", value: $0) },
+            as: CreatedPlaylist.self
+        ).playlist
+    }
+
+    /// Appends. `songIdToAdd` always adds to the end -- there is no insert-at-index in
+    /// the API.
+    func addToPlaylist(id: String, songIDs: [String]) async throws {
+        guard !songIDs.isEmpty else { return }
+        try await perform(
+            "updatePlaylist.view",
+            query: ["playlistId": id],
+            repeated: songIDs.map { URLQueryItem(name: "songIdToAdd", value: $0) }
+        )
+    }
+
+    /// Indices are positions in the playlist as the server currently has it, so they
+    /// are only valid against a freshly fetched copy.
+    func removeFromPlaylist(id: String, indices: [Int]) async throws {
+        guard !indices.isEmpty else { return }
+        try await perform(
+            "updatePlaylist.view",
+            query: ["playlistId": id],
+            repeated: indices.map {
+                URLQueryItem(name: "songIndexToRemove", value: String($0))
+            }
+        )
+    }
+
+    func renamePlaylist(id: String, name: String, comment: String? = nil) async throws {
+        try await perform(
+            "updatePlaylist.view",
+            query: ["playlistId": id, "name": name, "comment": comment]
+        )
+    }
+
+    func deletePlaylist(id: String) async throws {
+        try await perform("deletePlaylist.view", query: ["id": id])
+    }
+
+    // MARK: - Radio
+
+    /// Navidrome computes this itself -- no Last.fm key needed, unlike `getTopSongs`.
+    /// Verified: a **song** id returns results, an **artist** id returns none, so this
+    /// is seeded from a track rather than from an artist.
+    func similarSongs(toSongID id: String, count: Int = 50) async throws -> [Song] {
+        try await get(
+            "getSimilarSongs2.view",
+            query: ["count": String(count), "id": id],
+            as: SimilarSongs.self
+        ).song ?? []
     }
 
     enum StarKind: Sendable {

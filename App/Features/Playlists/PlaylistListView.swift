@@ -2,9 +2,14 @@ import SwiftUI
 
 struct PlaylistListView: View {
     @Environment(AppState.self) private var appState
+    @Environment(PlaylistStore.self) private var store
 
-    @State private var playlists: [Playlist] = []
-    @State private var isLoading = false
+    @State private var isCreating = false
+    @State private var editing: Playlist?
+    @State private var deleting: Playlist?
+
+    private var playlists: [Playlist] { store.playlists }
+    private var isLoading: Bool { store.isLoading }
 
     var body: some View {
         List {
@@ -29,6 +34,24 @@ struct PlaylistListView: View {
                         }
                         .frame(minHeight: 64)
                     }
+                    .contextMenu {
+                        Button("Play", systemImage: "play.fill") { play(playlist) }
+                        Button("Shuffle", systemImage: "shuffle") {
+                            play(playlist, shuffled: true)
+                        }
+                        Divider()
+                        Button("Rename…", systemImage: "pencil") { editing = playlist }
+                        Button("Delete", systemImage: "trash", role: .destructive) {
+                            deleting = playlist
+                        }
+                    }
+                    .swipeActions(edge: .trailing) {
+                        Button(role: .destructive) {
+                            deleting = playlist
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
                 }
             } footer: {
                 if !playlists.isEmpty {
@@ -40,6 +63,36 @@ struct PlaylistListView: View {
         }
         .listStyle(.plain)
         .navigationTitle("Playlists")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    isCreating = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel("New playlist")
+            }
+        }
+        .sheet(isPresented: $isCreating) {
+            NewPlaylistSheet(songs: [])
+        }
+        .sheet(item: $editing) { playlist in
+            EditPlaylistSheet(playlist: playlist)
+        }
+        .confirmationDialog(
+            deleting.map { "Delete “\($0.name)”?" } ?? "",
+            isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Delete Playlist", role: .destructive) {
+                if let playlist = deleting {
+                    Task { await store.delete(playlist) }
+                }
+                deleting = nil
+            }
+        } message: {
+            Text("The songs stay in your library.")
+        }
         .overlay {
             if isLoading, playlists.isEmpty { ProgressView() }
         }
@@ -48,12 +101,23 @@ struct PlaylistListView: View {
                 ContentUnavailableView(
                     "No Playlists",
                     systemImage: "music.note.list",
-                    description: Text("Playlists created on the server appear here.")
+                    description: Text("Tap + to make one, or add songs from any list.")
                 )
             }
         }
-        .refreshable { await load() }
-        .task { await load() }
+        .refreshable { await store.load() }
+        .task { await store.loadIfNeeded() }
+    }
+
+    private func play(_ playlist: Playlist, shuffled: Bool = false) {
+        Task {
+            guard let detail = try? await appState.client.playlistDetail(id: playlist.id),
+                  !detail.songs.isEmpty
+            else { return }
+            appState.player.play(
+                songs: detail.songs, startingAt: 0, source: playlist.name, shuffled: shuffled
+            )
+        }
     }
 
     private func subtitle(for playlist: Playlist) -> String {
@@ -63,15 +127,12 @@ struct PlaylistListView: View {
         return parts.joined(separator: " · ")
     }
 
-    private func load() async {
-        isLoading = true
-        playlists = (try? await appState.client.playlists()) ?? []
-        isLoading = false
-    }
 }
 
 struct PlaylistDetailView: View {
     @Environment(AppState.self) private var appState
+    @Environment(PlaylistStore.self) private var store
+    @Environment(LibraryScopeStore.self) private var scope
 
     let playlist: PlaylistRef
 
@@ -87,8 +148,23 @@ struct PlaylistDetailView: View {
             }
 
             // Playlist order is the server's order; never re-sorted.
-            ForEach(Array(songs.enumerated()), id: \.element.id) { index, _ in
+            ForEach(Array(songs.enumerated()), id: \.offset) { index, _ in
                 PlayableSongRow(songs: songs, index: index, source: playlist.name)
+                    // Trailing swipe removes from the playlist here, rather than the
+                    // generic "add to queue": in a playlist, removal is the action you
+                    // actually want, and the index is valid because `songs` came
+                    // straight from the server.
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button(role: .destructive) {
+                            Task {
+                                if await store.removeIndex(index, from: playlist.id) {
+                                    await load()
+                                }
+                            }
+                        } label: {
+                            Label("Remove", systemImage: "minus.circle")
+                        }
+                    }
             }
         }
         .listStyle(.plain)
@@ -99,7 +175,21 @@ struct PlaylistDetailView: View {
                     songs: songs, groupID: playlist.id, groupName: playlist.name
                 )
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button("Start Radio", systemImage: "dot.radiowaves.left.and.right") {
+                        startRadio()
+                    }
+                    if let match = store.playlists.first(where: { $0.id == playlist.id }) {
+                        Divider()
+                        Button("Rename…", systemImage: "pencil") { editing = match }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+            }
         }
+        .sheet(item: $editing) { EditPlaylistSheet(playlist: $0) }
         .task { await load() }
     }
 
@@ -149,7 +239,19 @@ struct PlaylistDetailView: View {
         .padding(.vertical, Metrics.gutter)
     }
 
+    @State private var editing: Playlist?
+
     private var songs: [Song] { detail?.songs ?? [] }
+
+    /// Seeded from a random track in the playlist, so the mix differs each time rather
+    /// than always radiating out from track one.
+    private func startRadio() {
+        guard let seed = songs.randomElement() else { return }
+        Task {
+            let mix = await appState.radio.mix(seed: seed, scope: scope.scope)
+            appState.startRadio(named: "\(playlist.name) Radio", songs: mix)
+        }
+    }
 
     private var subtitle: String {
         var parts: [String] = []

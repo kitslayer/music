@@ -48,18 +48,32 @@ struct PlayShuffleButtons: View {
     var isBusy = false
 
     var body: some View {
+        // Explicit fills and label colours rather than `.borderedProminent`. With the
+        // app tint applied, that style rendered the label in the *same* colour as the
+        // fill, so the text and icon disappeared into the button. Spelling both out
+        // also makes the two buttons distinguishable at a glance, which a matched
+        // prominent pair is not.
         HStack(spacing: Metrics.itemSpacing) {
             Button(action: onPlay) {
                 Label("Play", systemImage: "play.fill")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
+                    .frame(height: 46)
+                    .background(Color.appTint, in: Capsule())
             }
+            .buttonStyle(.plain)
+
             Button(action: onShuffle) {
                 Label("Shuffle", systemImage: "shuffle")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(Color.appTint)
                     .frame(maxWidth: .infinity)
+                    .frame(height: 46)
+                    .background(Color.appTint.opacity(0.16), in: Capsule())
             }
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.borderedProminent)
-        .controlSize(.large)
         .disabled(isBusy)
         .overlay {
             if isBusy {

@@ -8,11 +8,19 @@ struct SongMenu: View {
     @Environment(AppState.self) private var appState
     @Environment(UserStateStore.self) private var userState
     @Environment(DownloadCenter.self) private var downloads
+    @Environment(LibraryScopeStore.self) private var scope
 
     let song: Song
     /// Present only where "go to album/artist" would navigate somewhere you already
     /// are.
     var showsNavigation = true
+
+    private func startRadio() {
+        Task {
+            let songs = await appState.radio.mix(seed: song, scope: scope.scope)
+            appState.startRadio(named: "\(song.title) Radio", songs: songs)
+        }
+    }
 
     var body: some View {
         Button("Play Next", systemImage: "text.insert") {
@@ -22,6 +30,14 @@ struct SongMenu: View {
         Button("Add to Queue", systemImage: "text.append") {
             appState.player.append([song])
         }
+
+        Divider()
+
+        Button("Start Radio", systemImage: "dot.radiowaves.left.and.right") {
+            startRadio()
+        }
+
+        AddToPlaylistMenu(songs: [song], suggestedName: song.album ?? song.title)
 
         Divider()
 

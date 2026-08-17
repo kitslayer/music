@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AlbumDetailView: View {
     @Environment(AppState.self) private var appState
+    @Environment(LibraryScopeStore.self) private var scope
 
     let album: AlbumRef
 
@@ -46,6 +47,17 @@ struct AlbumDetailView: View {
                     kind: .album,
                     serverValue: detail?.starred != nil
                 )
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button("Start Radio", systemImage: "dot.radiowaves.left.and.right") {
+                        startRadio()
+                    }
+                    AddToPlaylistMenu(songs: songs, suggestedName: album.name)
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .disabled(songs.isEmpty)
             }
         }
         .task { await load() }
@@ -123,6 +135,14 @@ struct AlbumDetailView: View {
         if let count = detail?.songCount { parts.append("\(count) tracks") }
         if let duration = detail?.duration { parts.append(duration.asLongDuration) }
         return parts.joined(separator: " · ")
+    }
+
+    private func startRadio() {
+        guard let seed = songs.randomElement() else { return }
+        Task {
+            let mix = await appState.radio.mix(seed: seed, scope: scope.scope)
+            appState.startRadio(named: "\(album.name) Radio", songs: mix)
+        }
     }
 
     private func load() async {

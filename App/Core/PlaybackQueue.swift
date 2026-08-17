@@ -72,7 +72,13 @@ struct PlaybackQueue: Codable, Sendable {
             sourceDescription: source
         )
         queue.position = queue.order.firstIndex(of: index) ?? 0
-        if shuffled { queue.shuffle(keepingCurrent: true) }
+
+        // `keepingCurrent: false` on purpose. Pressing Shuffle should start on a
+        // random track; keeping the current one pinned it to position 0, so shuffle
+        // always began with track 1 and only the rest was random. Toggling shuffle
+        // *during* playback is the opposite case and still keeps the current track --
+        // see `toggleShuffle`.
+        if shuffled { queue.shuffle(keepingCurrent: false) }
         return queue
     }
 
@@ -83,8 +89,10 @@ struct PlaybackQueue: Codable, Sendable {
         var shuffledOrder = Array(tracks.indices).shuffled()
 
         if keepingCurrent, let currentTrackIndex,
-           let where_ = shuffledOrder.firstIndex(of: currentTrackIndex) {
-            shuffledOrder.swapAt(0, where_)
+           let existing = shuffledOrder.firstIndex(of: currentTrackIndex) {
+            shuffledOrder.swapAt(0, existing)
+            position = 0
+        } else {
             position = 0
         }
 

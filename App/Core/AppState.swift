@@ -23,6 +23,7 @@ final class AppState {
     let artwork = ArtworkStore()
     let scope = LibraryScopeStore()
     let userState = UserStateStore()
+    let playlistStore = PlaylistStore()
     let downloads = DownloadCenter()
     let reachability = Reachability()
     let outbox = ServerOutbox()
@@ -35,6 +36,7 @@ final class AppState {
         // background download session can be relaunched into.
         Paths.bootstrap()
         userState.configure(client: client)
+        playlistStore.configure(client: client)
         downloads.attach(appState: self)
         player.attach(appState: self)
 
@@ -108,7 +110,18 @@ final class AppState {
         await client.configure(nil)
         artwork.configure(signer: nil)
         userState.reset()
+        playlistStore.reset()
         phase = .needsSetup
+    }
+
+    /// Radio needs no state of its own; it is a few calls in a known order.
+    var radio: RadioBuilder { RadioBuilder(client: client) }
+
+    /// Starts a mix and plays it. Here rather than in a view because three different
+    /// screens start radio and none of them should own the sequencing.
+    func startRadio(named name: String, songs: [Song], shuffled: Bool = false) {
+        guard !songs.isEmpty else { return }
+        player.play(songs: songs, startingAt: 0, source: name, shuffled: shuffled)
     }
 
     /// Called at launch, on foreground, and on regaining a network. Cheap when the

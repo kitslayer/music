@@ -3,6 +3,8 @@ import SwiftUI
 struct QueueView: View {
     @Environment(AppState.self) private var appState
 
+    @State private var isSavingAsPlaylist = false
+
     private var player: PlaybackController { appState.player }
 
     var body: some View {
@@ -17,6 +19,18 @@ struct QueueView: View {
                         .foregroundStyle(.white.opacity(0.6))
                         .lineLimit(1)
                 }
+
+                // A queue built by hand is the one thing in the app that exists
+                // nowhere else, so it gets a way out to something permanent.
+                Button {
+                    isSavingAsPlaylist = true
+                } label: {
+                    Image(systemName: "text.badge.plus")
+                        .foregroundStyle(.white.opacity(0.8))
+                }
+                .buttonStyle(.plain)
+                .disabled(player.queue.tracks.isEmpty)
+                .accessibilityLabel("Save queue as playlist")
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 8)
@@ -38,9 +52,32 @@ struct QueueView: View {
                         }
                     }
                 }
+                // Reordering is local, so it is free here -- unlike a server playlist,
+                // where the API has no move operation at all.
+                .onMove { source, destination in
+                    guard let from = source.first else { return }
+                    let start = player.queue.position + 1
+                    player.moveInQueue(
+                        from: start + from,
+                        to: start + destination
+                    )
+                }
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
+            // Always active: a queue is exactly the place where dragging to reorder is
+            // expected without first tapping an Edit button.
+            .environment(\.editMode, .constant(.active))
+            .sheet(isPresented: $isSavingAsPlaylist) {
+                NewPlaylistSheet(
+                    songs: player.queue.order.compactMap { index in
+                        player.queue.tracks.indices.contains(index)
+                            ? player.queue.tracks[index]
+                            : nil
+                    },
+                    suggestedName: player.queue.sourceDescription
+                )
+            }
             .overlay {
                 if player.queue.upNext.isEmpty {
                     Text("Nothing queued")
