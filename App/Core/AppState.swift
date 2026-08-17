@@ -44,6 +44,7 @@ final class AppState {
         Paths.bootstrap()
         userState.configure(client: client)
         playlistStore.configure(client: client)
+        requests.configure(client: client)
         downloads.attach(appState: self)
         player.attach(appState: self)
 
@@ -80,6 +81,7 @@ final class AppState {
 
         await player.restore()
         await flushOutbox()
+        await refreshRequests()
         await loadServerContext()
     }
 
@@ -136,6 +138,14 @@ final class AppState {
     func flushOutbox() async {
         guard credentials != nil else { return }
         _ = await outbox.flush(using: client)
+    }
+
+    /// Checks whether requested music has landed. Called at launch and on foreground:
+    /// acquisition takes minutes to hours, so the useful moments to look are the ones
+    /// where the app is coming back anyway.
+    func refreshRequests() async {
+        guard credentials != nil, requests.isWatchingAnything else { return }
+        await requests.refresh()
     }
 
     /// Best-effort: neither the folder list nor the capability list is worth

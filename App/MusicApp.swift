@@ -29,6 +29,7 @@ struct MusicApp: App {
                         // Coming back is the most likely moment to have a network
                         // again after listening offline.
                         Task { await appState.flushOutbox() }
+                        Task { await appState.refreshRequests() }
                     case .background:
                         // Backgrounding does not kill the app while audio plays, but
                         // termination while paused is common and silent.
