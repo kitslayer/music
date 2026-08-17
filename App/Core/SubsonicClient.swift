@@ -677,6 +677,3 @@ private struct AnyKey: CodingKey {
 }
 
 /// Lets a payload type declare which key it lives under in the envelope.
-protocol PayloadKeyed {
-    static var payloadKey: String { get }
-}

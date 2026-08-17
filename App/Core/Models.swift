@@ -23,6 +23,12 @@ enum AlbumSort: String, CaseIterable, Identifiable, Sendable {
 
 // MARK: - Library items
 
+/// The key a Subsonic response nests its payload under, so the envelope decoder can
+/// reach through one generic layer instead of every model spelling out a wrapper.
+protocol PayloadKeyed {
+    static var payloadKey: String { get }
+}
+
 struct Album: Codable, Identifiable, Hashable, Sendable {
     let id: String
     let name: String
