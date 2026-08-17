@@ -96,8 +96,10 @@ final class QueuePlayerOutput: AudioOutput {
 
     func seek(to seconds: Double) {
         let target = CMTime(seconds: max(0, seconds), preferredTimescale: 600)
+        // Hops rather than asserting: unlike the periodic time observer, which is
+        // explicitly given the main queue, a seek completion carries no such promise.
         player.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
-            MainActor.assumeIsolated {
+            Task { @MainActor in
                 self?.elapsed = seconds
             }
         }

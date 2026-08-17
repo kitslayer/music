@@ -20,27 +20,33 @@ final class NowPlayingCenter {
 
     /// Targets are added exactly once. Re-registering per track change is the
     /// standard bug and produces double-skips.
+    ///
+    /// Every handler is `@Sendable` and hops explicitly. iOS happens to deliver these
+    /// on the main thread today, but that is not contractual, and an inherited
+    /// `@MainActor` closure called from anywhere else is an immediate trap rather than
+    /// a missed button press. The status has to be returned synchronously, so the
+    /// action is dispatched and `.success` reported straight away.
     private func registerCommands() {
         let center = MPRemoteCommandCenter.shared()
 
         center.playCommand.addTarget { [weak self] _ in
-            MainActor.assumeIsolated { self?.onPlay?() }
+            Task { @MainActor in self?.onPlay?() }
             return .success
         }
         center.pauseCommand.addTarget { [weak self] _ in
-            MainActor.assumeIsolated { self?.onPause?() }
+            Task { @MainActor in self?.onPause?() }
             return .success
         }
         center.togglePlayPauseCommand.addTarget { [weak self] _ in
-            MainActor.assumeIsolated { self?.onToggle?() }
+            Task { @MainActor in self?.onToggle?() }
             return .success
         }
         center.nextTrackCommand.addTarget { [weak self] _ in
-            MainActor.assumeIsolated { self?.onNext?() }
+            Task { @MainActor in self?.onNext?() }
             return .success
         }
         center.previousTrackCommand.addTarget { [weak self] _ in
-            MainActor.assumeIsolated { self?.onPrevious?() }
+            Task { @MainActor in self?.onPrevious?() }
             return .success
         }
 
@@ -49,7 +55,8 @@ final class NowPlayingCenter {
             guard let event = event as? MPChangePlaybackPositionCommandEvent else {
                 return .commandFailed
             }
-            MainActor.assumeIsolated { self?.onSeek?(event.positionTime) }
+            let position = event.positionTime
+            Task { @MainActor in self?.onSeek?(position) }
             return .success
         }
 
@@ -106,13 +113,32 @@ final class NowPlayingCenter {
 
     /// Set separately so lock-screen text is never gated on a network fetch.
     ///
-    /// The request handler is called on an arbitrary thread and must return
-    /// synchronously, so the image has to be in hand before the object is built.
+    /// The request handler must return synchronously, so the image has to be in hand
+    /// before the object is built -- and it is called on MediaPlayer's *own* serial
+    /// queue when the system wants a JPEG for the lock screen.
+    ///
+    /// Hence `@Sendable`, which is load-bearing rather than decorative: without it the
+    /// closure inherits this type's `@MainActor` isolation, and Swift 6 inserts an
+    /// executor check that trapped (`EXC_BREAKPOINT` in `dispatch_assert_queue`, on a
+    /// thread named `*/accessQueue`) the first time anything was played.
     func setArtwork(_ image: UIImage, songID: String? = nil) {
         currentArtworkSongID = songID
-        let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+
+        let box = ArtworkBox(image: image)
+        let artwork = MPMediaItemArtwork(boundsSize: image.size) { @Sendable _ in
+            box.image
+        }
+
         info[MPMediaItemPropertyArtwork] = artwork
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+
+    /// `UIImage` is not formally `Sendable`, but one that is never mutated after
+    /// creation is safe to read from any thread -- which is exactly how MediaPlayer
+    /// uses it. The box states that assumption in one place instead of spreading
+    /// `nonisolated(unsafe)` around.
+    private struct ArtworkBox: @unchecked Sendable {
+        let image: UIImage
     }
 
     func clear() {

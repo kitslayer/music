@@ -186,8 +186,10 @@ final class EngineOutput: AudioOutput {
             frameCount: remaining,
             at: nil,
             completionCallbackType: .dataPlayedBack
-        ) { [weak self] _ in
-            // Delivered on an internal audio queue, so hop rather than assume.
+        ) { @Sendable [weak self] _ in
+            // `@Sendable` so the closure does not inherit this type's `@MainActor`
+            // isolation: it is delivered on an internal audio thread, where an
+            // inherited-isolation check traps instead of hopping.
             Task { @MainActor [weak self] in
                 self?.nodeFinished(nodeIndex: nodeIndex, songID: songID)
             }

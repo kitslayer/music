@@ -449,10 +449,16 @@ final class PlaybackController {
 
         if let artwork = appState?.artwork {
             let id = song.coverArt
+            let songID = song.id
             Task { @MainActor in
-                if let image = await artwork.image(for: id, size: .full) {
-                    nowPlaying.setArtwork(image)
-                }
+                guard let image = await artwork.image(for: id, size: .full) else { return }
+                // Two guards, both needed. The song id lets `update` tell whether the
+                // artwork it already has belongs to the track being published -- passing
+                // nil made it clear and re-fetch the artwork on every play/pause, which
+                // is a visible blink on the lock screen. And a fetch that started for
+                // the previous track must not land on this one.
+                guard queue.current?.id == songID else { return }
+                nowPlaying.setArtwork(image, songID: songID)
             }
         }
     }
