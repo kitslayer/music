@@ -244,8 +244,8 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unch
             return
         }
 
-        let center = self.center
-        let entry = MainActor.assumeIsolated { center?.catalog.pending[songID] }
+        let target = center
+        let entry = MainActor.assumeIsolated { target?.catalog.pending[songID] }
         guard let entry else { return }
 
         // Synchronous, inline, before this method returns.
@@ -255,7 +255,7 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unch
         do {
             try FileManager.default.moveItem(at: location, to: destination)
         } catch {
-            MainActor.assumeIsolated { center?.taskFailed(songID: songID) }
+            MainActor.assumeIsolated { target?.taskFailed(songID: songID) }
             return
         }
 
@@ -263,7 +263,7 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unch
         let size = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
 
         MainActor.assumeIsolated {
-            center?.taskFinished(songID: songID, byteCount: size)
+            target?.taskFinished(songID: songID, byteCount: size)
         }
     }
 
