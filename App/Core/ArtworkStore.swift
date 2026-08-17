@@ -124,11 +124,12 @@ final class ArtworkStore {
             // re-fetch what is already kept. Decoding is expensive either way, so both
             // paths do it off the main actor.
             if let data = try? Data(contentsOf: file) {
-                if let image = await Task.detached(priority: .userInitiated) {
+                // Bound to a local first: a trailing closure inside an `if let`
+                // condition cannot be parsed -- it reads as the `if` body.
+                let decoded = await Task.detached(priority: .userInitiated) {
                     UIImage(data: data)
-                }.value {
-                    return image
-                }
+                }.value
+                if let decoded { return decoded }
             }
 
             guard let remote,
