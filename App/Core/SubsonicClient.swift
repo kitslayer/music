@@ -180,6 +180,54 @@ actor SubsonicClient {
         }
     }
 
+    /// Same parameters, moved into a form body.
+    ///
+    /// Needed because `savePlayQueue` for a 292-track playlist is ~7 KB of repeated
+    /// `id=` parameters, and a URL that long is not something to rely on. The server
+    /// advertises the `formPost` extension, which is exactly this.
+    private func post(
+        _ endpoint: String,
+        _ query: [String: String?],
+        _ repeated: [URLQueryItem] = []
+    ) async throws -> Data {
+        guard let credentials else { throw ClientError.notConfigured }
+
+        let salt = SubsonicAuth.makeSalt()
+        var items = [
+            URLQueryItem(name: "u", value: credentials.username),
+            URLQueryItem(name: "t", value: SubsonicAuth.token(
+                password: credentials.password, salt: salt
+            )),
+            URLQueryItem(name: "s", value: salt),
+            URLQueryItem(name: "v", value: SubsonicAuth.apiVersion),
+            URLQueryItem(name: "c", value: SubsonicAuth.clientName),
+            URLQueryItem(name: "f", value: "json"),
+        ]
+        items.append(contentsOf: query.compactMap { key, value in
+            value.map { URLQueryItem(name: key, value: $0) }
+        })
+        items.append(contentsOf: repeated)
+
+        var components = URLComponents()
+        components.queryItems = items
+        guard let body = components.percentEncodedQuery,
+              let url = URL(string: credentials.baseURL.absoluteString)?
+                  .appendingPathComponent("rest/\(endpoint)")
+        else { throw ClientError.notConfigured }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.httpBody = Data(body.utf8)
+
+        do {
+            let (data, _) = try await session.data(for: request)
+            return data
+        } catch {
+            throw ClientError.transport(error.localizedDescription)
+        }
+    }
+
     private func get<T: Decodable & PayloadKeyed>(
         _ endpoint: String,
         query: [String: String?] = [:],
@@ -498,6 +546,51 @@ actor SubsonicClient {
             query: ["count": String(count), "id": id],
             as: SimilarSongs.self
         ).song ?? []
+    }
+
+    // MARK: - Play queue (cross-device)
+
+    /// The queue as last saved by any of this user's clients.
+    ///
+    /// This is what makes the phone and desktop Feishin two views of one session rather
+    /// than two players that merely share a library.
+    func savedQueue() async throws -> SavedQueue {
+        try await get("getPlayQueue.view", as: SavedQueue.self)
+    }
+
+    /// `position` is milliseconds into the current track, which is the unit Subsonic
+    /// uses here even though `scrobble` uses seconds.
+    func saveQueue(songIDs: [String], currentID: String?, positionMilliseconds: Int) async throws {
+        guard !songIDs.isEmpty else { return }
+
+        let data = try await post(
+            "savePlayQueue.view",
+            [
+                "current": currentID,
+                "position": String(max(0, positionMilliseconds)),
+            ],
+            songIDs.map { URLQueryItem(name: "id", value: $0) }
+        )
+
+        guard let decoded = try? decoder.decode(StatusOnly.self, from: data) else {
+            throw ClientError.server("Unexpected response from server.")
+        }
+        if let error = decoded.subsonicResponse.error {
+            throw ClientError.server(error.message)
+        }
+    }
+
+    // MARK: - Library scan
+
+    func scanStatus() async throws -> ScanStatus {
+        try await get("getScanStatus.view", as: ScanStatus.self)
+    }
+
+    /// Returns the status the server reports immediately, which is usually
+    /// `scanning: true`.
+    @discardableResult
+    func startScan() async throws -> ScanStatus {
+        try await get("startScan.view", as: ScanStatus.self)
     }
 
     enum StarKind: Sendable {

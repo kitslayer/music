@@ -280,15 +280,37 @@ struct NowPlayingView: View {
         .padding(.top, 5)
     }
 
+    /// "FLAC 24/96", "MP3 320 kbps". For lossless the depth and rate are the useful
+    /// numbers; the bitrate is variable and the reported figure is only an average, so
+    /// quoting it would look precise while meaning little.
     private func qualityText(_ song: Song) -> String {
         var parts: [String] = []
         if let suffix = song.suffix { parts.append(suffix.uppercased()) }
-        // Lossless bitrates are variable and the reported number is an average, so it
-        // is more honest to show the container alone than a precise-looking figure.
-        if let rate = song.bitRate, rate > 0, song.suffix?.lowercased() != "flac" {
+
+        let isLossless = ["flac", "wav", "aiff", "aif", "alac"]
+            .contains(song.suffix?.lowercased() ?? "")
+
+        if isLossless {
+            if let depth = song.bitDepth, let rate = song.samplingRate, rate > 0 {
+                parts.append("\(depth)/\(kilohertz(rate))")
+            } else if let rate = song.samplingRate, rate > 0 {
+                parts.append("\(kilohertz(rate)) kHz")
+            }
+        } else if let rate = song.bitRate, rate > 0 {
             parts.append("\(rate) kbps")
         }
+
+        if song.channelCount == 1 { parts.append("mono") }
+
         return parts.isEmpty ? "Streaming" : parts.joined(separator: " · ")
+    }
+
+    /// 44100 reads as 44.1, 48000 as 48 -- no trailing ".0".
+    private func kilohertz(_ hertz: Int) -> String {
+        let value = Double(hertz) / 1000
+        return value == value.rounded()
+            ? String(Int(value))
+            : String(format: "%.1f", value)
     }
 
     private var transport: some View {

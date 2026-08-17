@@ -55,6 +55,12 @@ struct Song: Codable, Identifiable, Hashable, Sendable {
     var suffix: String?
     var contentType: String?
     var bitRate: Int?
+    /// Present on OpenSubsonic servers. Together these are what turns a bare "FLAC"
+    /// badge into "FLAC 24/96", which is the readout that actually answers "is this
+    /// lossless".
+    var bitDepth: Int?
+    var samplingRate: Int?
+    var channelCount: Int?
     var starred: String?
     var userRating: Int?
     var playCount: Int?
@@ -303,6 +309,56 @@ struct StructuredLyrics: Codable, Hashable, Sendable {
     var line: [LyricLine]?
 
     var lines: [LyricLine] { line ?? [] }
+}
+
+/// The server's copy of the play queue, shared by every client on this account.
+struct SavedQueue: Decodable, PayloadKeyed, Sendable {
+    var entry: [Song]?
+    /// Song id of the track that was playing.
+    var current: String?
+    /// Milliseconds into `current`.
+    var position: Int?
+    /// ISO timestamp of the last save, used to decide whose queue is newer.
+    var changed: String?
+    /// The `c=` client name that saved it. Ours is skipped, so the app never adopts
+    /// its own save back over a queue the user has since changed locally.
+    var changedBy: String?
+
+    static var payloadKey: String { "playQueue" }
+
+    var songs: [Song] { entry ?? [] }
+
+    var changedAt: Date? {
+        guard let changed else { return nil }
+        return ISO8601DateFormatter().date(from: changed)
+            ?? ISO8601DateFormatter.withFractionalSeconds.date(from: changed)
+    }
+}
+
+extension ISO8601DateFormatter {
+    /// Navidrome includes fractional seconds, which the default formatter rejects.
+    static let withFractionalSeconds: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+}
+
+struct ScanStatus: Decodable, PayloadKeyed, Sendable {
+    var scanning: Bool
+    var count: Int?
+    var folderCount: Int?
+    var lastScan: String?
+    var scanType: String?
+    var elapsedTime: Int?
+
+    static var payloadKey: String { "scanStatus" }
+
+    var lastScanAt: Date? {
+        guard let lastScan else { return nil }
+        return ISO8601DateFormatter().date(from: lastScan)
+            ?? ISO8601DateFormatter.withFractionalSeconds.date(from: lastScan)
+    }
 }
 
 struct CreatedPlaylist: Decodable, PayloadKeyed, Sendable {

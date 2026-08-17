@@ -16,6 +16,8 @@ struct MusicApp: App {
                 .environment(appState.userState)
                 .environment(appState.playlistStore)
                 .environment(appState.requests)
+                .environment(appState.queueSync)
+                .environment(appState.playlistSync)
                 .environment(appState.downloads)
                 .environment(appState.reachability)
                 .environment(appState.sleepTimer)
@@ -30,6 +32,12 @@ struct MusicApp: App {
                         // again after listening offline.
                         Task { await appState.flushOutbox() }
                         Task { await appState.refreshRequests() }
+                        Task { await appState.playlistSync.sync() }
+                        Task {
+                            await appState.queueSync.check(
+                                localSavedAt: appState.player.lastSavedAt
+                            )
+                        }
                     case .background:
                         // Backgrounding does not kill the app while audio plays, but
                         // termination while paused is common and silent.

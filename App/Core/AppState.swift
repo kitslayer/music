@@ -25,6 +25,8 @@ final class AppState {
     let userState = UserStateStore()
     let playlistStore = PlaylistStore()
     let requests = MusicRequestService()
+    let queueSync = QueueSync()
+    let playlistSync = PlaylistSync()
     let downloads = DownloadCenter()
     let reachability = Reachability()
     let outbox = ServerOutbox()
@@ -45,6 +47,10 @@ final class AppState {
         userState.configure(client: client)
         playlistStore.configure(client: client)
         requests.configure(client: client)
+        queueSync.configure(client: client)
+        playlistSync.configure(
+            client: client, downloads: downloads, reachability: reachability
+        )
         downloads.attach(appState: self)
         player.attach(appState: self)
 
@@ -82,6 +88,11 @@ final class AppState {
         await player.restore()
         await flushOutbox()
         await refreshRequests()
+
+        // Both are cheap when there is nothing to do, and both want to happen once the
+        // credentials are known rather than at construction.
+        await queueSync.check(localSavedAt: player.lastSavedAt)
+        await playlistSync.sync()
         await loadServerContext()
     }
 
@@ -120,6 +131,7 @@ final class AppState {
         artwork.configure(signer: nil)
         userState.reset()
         playlistStore.reset()
+        queueSync.reset()
         phase = .needsSetup
     }
 
@@ -138,6 +150,26 @@ final class AppState {
     func flushOutbox() async {
         guard credentials != nil else { return }
         _ = await outbox.flush(using: client)
+    }
+
+    /// Adopts a queue saved by another client, at its position, **paused**. Resuming
+    /// automatically would start music in someone's pocket.
+    func adoptRemoteQueue() {
+        guard let remote = queueSync.available else { return }
+        player.adopt(
+            songs: remote.songs,
+            currentID: remote.currentID,
+            positionSeconds: remote.positionSeconds,
+            source: "From \(remote.changedBy)"
+        )
+        queueSync.dismiss()
+    }
+
+    /// Triggers a server rescan. Used after requesting music, because otherwise new
+    /// files only appear when Navidrome next scans on its own schedule.
+    @discardableResult
+    func rescanLibrary() async -> ScanStatus? {
+        try? await client.startScan()
     }
 
     /// Checks whether requested music has landed. Called at launch and on foreground:

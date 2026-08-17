@@ -47,6 +47,9 @@ final class PlaybackController {
     /// Non-nil while a visualiser is on screen. Held here rather than in the output so
     /// it survives a switch between outputs mid-track.
     private var spectrumSink: AudioSampleBuffer?
+    /// When the local queue was last written to disk, so `QueueSync` can tell whether a
+    /// remote queue is genuinely newer.
+    private(set) var lastSavedAt: Date?
 
     /// Current + 2 upcoming. Preloading the next item is what makes the boundary
     /// gapless; inserting a 292-track playlist would be a connection stampede.
@@ -124,6 +127,22 @@ final class PlaybackController {
             mimeType: song.contentType ?? Self.mimeType(for: song.suffix),
             isLocal: false
         )
+    }
+
+    /// Replaces the queue with one from another device, paused at its position.
+    func adopt(songs: [Song], currentID: String?, positionSeconds: Double, source: String) {
+        guard !songs.isEmpty else { return }
+        let index = currentID.flatMap { id in songs.firstIndex { $0.id == id } } ?? 0
+
+        queue = .make(
+            tracks: songs,
+            startingAt: index,
+            shuffled: false,
+            source: source,
+            repeatMode: queue.repeatMode
+        )
+        rebuildOutput(startPlaying: false, seekTo: positionSeconds)
+        persistNow()
     }
 
     // MARK: - Visualiser
@@ -491,21 +510,27 @@ final class PlaybackController {
     private func persist() {
         saveTask?.cancel()
         let snapshot = QueueSnapshot(queue: queue, positionSeconds: elapsed, savedAt: .now)
+        lastSavedAt = snapshot.savedAt
         saveTask = Task { [store] in
             try? await Task.sleep(for: .seconds(2))
             guard !Task.isCancelled else { return }
             await store.save(snapshot)
         }
+        // Debounced inside QueueSync, so this is safe on every transition.
+        appState?.queueSync.push(queue: queue, elapsed: elapsed)
     }
 
     func persistNow() {
         let snapshot = QueueSnapshot(queue: queue, positionSeconds: elapsed, savedAt: .now)
+        lastSavedAt = snapshot.savedAt
         Task { [store] in await store.save(snapshot) }
+        appState?.queueSync.pushNow(queue: queue, elapsed: elapsed)
     }
 
     /// Restores the previous queue **paused**. Auto-playing on launch is hostile.
     func restore() async {
         guard let snapshot = await store.load(), !snapshot.queue.isEmpty else { return }
+        lastSavedAt = snapshot.savedAt
         queue = snapshot.queue
         rebuildOutput(startPlaying: false, seekTo: snapshot.positionSeconds)
     }

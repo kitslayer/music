@@ -4,7 +4,9 @@ import SwiftUI
 /// owned, named. A fourth tab would be a destination rather than a mode, which is
 /// why Downloads and Settings live inside Library and Home instead.
 struct MainTabView: View {
+    @Environment(AppState.self) private var appState
     @Environment(PlaylistStore.self) private var playlistStore
+    @Environment(QueueSync.self) private var queueSync
 
     @State private var showsPlayer = false
 
@@ -26,7 +28,53 @@ struct MainTabView: View {
             NowPlayingView()
         }
         .overlay(alignment: .bottom) { toast }
+        .safeAreaInset(edge: .top) { remoteQueueBanner }
         .animation(.snappy(duration: 0.25), value: playlistStore.lastMessage)
+        .animation(.snappy(duration: 0.25), value: queueSync.available)
+    }
+
+    /// Offered rather than applied. Another device's queue arriving unannounced and
+    /// replacing what you were listening to would be worse than not syncing at all.
+    @ViewBuilder
+    private var remoteQueueBanner: some View {
+        if let remote = queueSync.available {
+            HStack(spacing: Metrics.itemSpacing) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .foregroundStyle(Color.appTint)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Continue from \(remote.changedBy)?")
+                        .font(.footnote.weight(.medium))
+                    Text(remote.songs.first.map { song in
+                        remote.songs.count == 1
+                            ? song.title
+                            : "\(song.title) + \(remote.songs.count - 1) more"
+                    } ?? "")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 8)
+
+                Button("Resume") { appState.adoptRemoteQueue() }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+
+                Button {
+                    queueSync.dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss")
+            }
+            .padding(.horizontal, Metrics.gutter)
+            .padding(.vertical, 10)
+            .background(.regularMaterial)
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
     }
 
     /// Added a song to a playlist? Say so. Menus give no feedback of their own, so

@@ -6,6 +6,7 @@ struct SettingsView: View {
     @Environment(AudioSettings.self) private var audio
     @Environment(DownloadCenter.self) private var downloads
     @Environment(MusicRequestService.self) private var requests
+    @Environment(PlaylistSync.self) private var playlistSync
 
     @State private var testResult: String?
     @State private var isTesting = false
@@ -61,6 +62,9 @@ struct SettingsView: View {
                 NavigationLink(value: Destination.downloads) {
                     LabeledContent("Downloads", value: downloadSummary)
                 }
+                NavigationLink(value: Destination.offlineSettings) {
+                    LabeledContent("Offline & Library", value: offlineSummary)
+                }
                 NavigationLink(value: Destination.requestSettings) {
                     LabeledContent(
                         "Music Requests",
@@ -86,6 +90,10 @@ struct SettingsView: View {
         guard audio.isEnabled else { return "Gapless" }
         if audio.crossfadeSeconds > 0 { return "Crossfade \(Int(audio.crossfadeSeconds))s" }
         return audio.isFlat ? "Gapless" : audio.presetName
+    }
+
+    private var offlineSummary: String {
+        playlistSync.isEnabled ? "Playlists kept offline" : "Manual"
     }
 
     private var downloadSummary: String {
