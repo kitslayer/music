@@ -38,7 +38,7 @@ struct Album: Decodable, Identifiable, Hashable, Sendable {
     var isFavorite: Bool { starred != nil }
 }
 
-struct Song: Decodable, Identifiable, Hashable, Sendable {
+struct Song: Codable, Identifiable, Hashable, Sendable {
     let id: String
     let title: String
     var album: String?

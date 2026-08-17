@@ -73,12 +73,8 @@ final class AudioSessionCoordinator {
 
         switch type {
         case .began:
-            // An `.appWasSuspended` interruption is never followed by `.ended`, so
-            // there is no resume to wait for.
-            if let rawReason = info[AVAudioSessionInterruptionReasonKey] as? UInt,
-               rawReason == AVAudioSession.InterruptionReason.appWasSuspended.rawValue {
-                wasPlayingBeforeInterruption = false
-            }
+            // No special case for `.appWasSuspended`: it was never followed by
+            // `.ended` and iOS 16 stopped sending it at all.
             onPause?()
 
         case .ended:

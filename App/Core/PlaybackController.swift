@@ -163,9 +163,9 @@ final class PlaybackController {
         player.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                elapsed = seconds
-                tracker.interrupted(at: seconds)
-                publishNowPlaying(force: true)
+                self.elapsed = seconds
+                self.tracker.interrupted(at: seconds)
+                self.publishNowPlaying(force: true)
             }
         }
     }
@@ -286,9 +286,9 @@ final class PlaybackController {
 
         var options: [String: Any] = [:]
         // `stream.view` has no path extension, so AVFoundation has nothing to sniff
-        // and FLAC fails to pick a decoder. Supply the type out of band.
+        // and FLAC fails to pick a decoder. Override the type explicitly.
         if let mime = song.contentType ?? Self.mimeType(for: song.suffix) {
-            options[AVURLAssetOutOfBandMIMETypeKey] = mime
+            options[AVURLAssetOverrideMIMETypeKey] = mime
         }
 
         // Always `raw`: a transcoded response is chunked with no Content-Length and
