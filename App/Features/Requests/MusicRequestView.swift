@@ -2,10 +2,12 @@ import SwiftUI
 
 /// Ask for music the library does not have.
 ///
-/// The request goes to the Hermes agent, which searches Soulseek, verifies the transfer
-/// actually landed, and reports back on its own channel. So this screen is deliberately
-/// not a progress view: it can honestly say "sent", and nothing more. Claiming to track
-/// a download it cannot see would be the worse lie.
+/// The request goes to the Hermes agent, which searches Soulseek and acquires it.
+///
+/// The agent reports on its own channel, which this app cannot read. So rather than
+/// claiming to track a transfer it cannot see, this screen watches the *library* and
+/// says when the music actually turns up — an answer that cannot silently fail the
+/// way a delivery hop can.
 struct MusicRequestView: View {
     @Environment(MusicRequestService.self) private var requests
 
@@ -42,7 +44,7 @@ struct MusicRequestView: View {
                     if let error = requests.lastError {
                         Text(error).foregroundStyle(.red)
                     } else if didSend {
-                        Text("Sent. Hermes will search Soulseek and report back — it usually replies on Discord.")
+                        Text("Sent. This screen will say when it shows up in your library.")
                             .foregroundStyle(Color.appTint)
                     } else {
                         Text("An artist and album is enough. Hermes checks the library first so it will not fetch something you already have.")
@@ -52,25 +54,21 @@ struct MusicRequestView: View {
                 if !requests.history.isEmpty {
                     Section {
                         ForEach(requests.history) { entry in
-                            HStack(spacing: Metrics.itemSpacing) {
-                                Image(systemName: entry.wasAccepted
-                                    ? "checkmark.circle.fill"
-                                    : "exclamationmark.triangle.fill")
-                                    .foregroundStyle(entry.wasAccepted ? Color.appTint : .orange)
-
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(entry.text).lineLimit(2)
-                                    Text(entry.sentAt.formatted(date: .abbreviated, time: .shortened))
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
+                            RequestRow(entry: entry)
                         }
                     } header: {
-                        Text("Sent")
+                        HStack {
+                            Text("Requests")
+                            Spacer()
+                            if requests.isWatchingAnything {
+                                Text("checking your library")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .textCase(nil)
+                            }
+                        }
                     } footer: {
-                        // Said once, so a tick is not mistaken for "it arrived".
-                        Text("A tick means the gateway accepted the request, not that the music arrived.")
+                        Text("The agent replies on its own channel, which this app cannot read — so instead it watches your library and tells you when the music actually turns up.")
                     }
 
                     Section {
@@ -92,9 +90,19 @@ struct MusicRequestView: View {
             }
         }
         .navigationTitle("Request Music")
+        .refreshable { await requests.refresh() }
         .onAppear {
             if text.isEmpty { text = initialText }
             isFocused = requests.isConfigured && text.isEmpty
+        }
+        // Polls while the screen is open, and only while something is outstanding. A
+        // request takes minutes to hours, so 20 s is attentive without being wasteful,
+        // and the loop ends the moment everything has resolved.
+        .task {
+            while !Task.isCancelled, requests.isWatchingAnything {
+                await requests.refresh()
+                try? await Task.sleep(for: .seconds(20))
+            }
         }
     }
 
@@ -106,6 +114,75 @@ struct MusicRequestView: View {
                 text = ""
             }
         }
+    }
+}
+
+/// One request, and what has become of it.
+private struct RequestRow: View {
+    let entry: MusicRequestService.Entry
+
+    var body: some View {
+        if let arrival = entry.arrival, let albumID = arrival.firstAlbumID {
+            // Arrived and identifiable: make it a way into the music.
+            NavigationLink(value: Destination.album(
+                AlbumRef(id: albumID, name: arrival.albumNames.first ?? entry.text)
+            )) {
+                content
+            }
+        } else {
+            content
+        }
+    }
+
+    private var content: some View {
+        HStack(spacing: Metrics.itemSpacing) {
+            Image(systemName: symbol)
+                .foregroundStyle(tint)
+                .frame(width: 22)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.text).lineLimit(2)
+                Text(status)
+                    .font(.caption)
+                    .foregroundStyle(entry.arrival != nil ? Color.appTint : .secondary)
+            }
+        }
+    }
+
+    private var symbol: String {
+        if entry.arrival != nil { return "checkmark.circle.fill" }
+        if entry.gaveUp == true { return "questionmark.circle" }
+        if !entry.wasAccepted { return "exclamationmark.triangle.fill" }
+        return "clock"
+    }
+
+    private var tint: Color {
+        if entry.arrival != nil { return .appTint }
+        if !entry.wasAccepted { return .orange }
+        return .secondary
+    }
+
+    /// Deliberately concrete about which of the four states this is. "Sent" on its own
+    /// was the thing that made the old screen useless.
+    private var status: String {
+        if let arrival = entry.arrival {
+            let names = arrival.albumNames.filter { !$0.isEmpty }
+            if !names.isEmpty {
+                return "Arrived — " + names.joined(separator: ", ")
+            }
+            let unit = arrival.songCount == 1 ? "track" : "tracks"
+            return "Arrived — \(arrival.songCount) new " + unit
+        }
+
+        if !entry.wasAccepted {
+            return "Not sent — " + entry.sentAt.formatted(date: .abbreviated, time: .shortened)
+        }
+
+        if entry.gaveUp == true {
+            return "Never turned up. Sent " + entry.sentAt.formatted(date: .abbreviated, time: .omitted) + "."
+        }
+
+        return "Waiting since " + entry.sentAt.formatted(date: .omitted, time: .shortened)
     }
 }
 
