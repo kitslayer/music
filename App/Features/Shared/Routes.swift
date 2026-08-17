@@ -15,6 +15,8 @@ enum Destination: Hashable {
     case downloads
     case settings
     case audioSettings
+    case requestMusic(String)
+    case requestSettings
 }
 
 extension View {
@@ -50,6 +52,10 @@ extension View {
                 SettingsView()
             case .audioSettings:
                 AudioSettingsView()
+            case let .requestMusic(prefill):
+                MusicRequestView(initialText: prefill)
+            case .requestSettings:
+                MusicRequestSettingsView()
             }
         }
     }

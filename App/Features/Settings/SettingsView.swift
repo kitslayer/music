@@ -5,6 +5,7 @@ struct SettingsView: View {
     @Environment(LibraryScopeStore.self) private var scope
     @Environment(AudioSettings.self) private var audio
     @Environment(DownloadCenter.self) private var downloads
+    @Environment(MusicRequestService.self) private var requests
 
     @State private var testResult: String?
     @State private var isTesting = false
@@ -59,6 +60,12 @@ struct SettingsView: View {
                 }
                 NavigationLink(value: Destination.downloads) {
                     LabeledContent("Downloads", value: downloadSummary)
+                }
+                NavigationLink(value: Destination.requestSettings) {
+                    LabeledContent(
+                        "Music Requests",
+                        value: requests.isConfigured ? "Connected" : "Not set up"
+                    )
                 }
             }
 

@@ -24,6 +24,7 @@ final class AppState {
     let scope = LibraryScopeStore()
     let userState = UserStateStore()
     let playlistStore = PlaylistStore()
+    let requests = MusicRequestService()
     let downloads = DownloadCenter()
     let reachability = Reachability()
     let outbox = ServerOutbox()

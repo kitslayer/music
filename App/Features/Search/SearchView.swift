@@ -20,7 +20,18 @@ struct SearchView: View {
                 if query.isEmpty {
                     idleState
                 } else if let results, results.isEmpty, !isSearching {
-                    ContentUnavailableView.search(text: query)
+                    // The one moment a request button is genuinely useful: you have just
+                    // established that the library does not have this.
+                    ContentUnavailableView {
+                        Label("No Results", systemImage: "magnifyingglass")
+                    } description: {
+                        Text("Nothing in your library matches “\(query)”.")
+                    } actions: {
+                        NavigationLink(value: Destination.requestMusic(query)) {
+                            Label("Ask Hermes to find it", systemImage: "arrow.down.heart")
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
                 } else {
                     resultsList
                 }
