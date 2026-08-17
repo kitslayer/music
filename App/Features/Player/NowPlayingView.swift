@@ -11,7 +11,6 @@ struct NowPlayingView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var mode: PlayerMode = .artwork
-    @State private var scrubValue: Double?
     @State private var dragOffset: CGFloat = 0
     @Namespace private var modeNamespace
 
@@ -31,34 +30,29 @@ struct NowPlayingView: View {
     private var playerBody: some View {
         VStack(spacing: 0) {
             topBar
-                .gesture(dismissDrag)
 
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                // Only in artwork mode: in queue and lyrics mode this area is a
-                // scroller, and a drag gesture over it would steal the scroll.
-                // `.subviews` is how a gesture is switched off -- there is no
-                // `gesture(_:)` overload that takes an optional.
-                .gesture(dismissDrag, including: mode == .artwork ? .all : .subviews)
 
             if let song = player.currentSong {
-                VStack(spacing: 0) {
-                    metadata(song)
-                    detailLine(song)
-                }
-                .gesture(dismissDrag)
-
-                seekBar
+                metadata(song)
+                detailLine(song)
+                PlayerSeekBar()
                 transport
                 volumeRow
                 bottomRow
             }
         }
+        // Exactly one gesture, on the root, so a drag is never handed between views
+        // mid-track. In the scrolling modes the root's copy is masked off and the top
+        // bar carries it instead -- the two masks are complements, so only one is ever
+        // live.
+        .gesture(dismissDrag, including: isScrollingMode ? .subviews : .all)
         .background(alignment: .top) { backdrop }
+        // Offset only. A scale on top of this meant recompositing the blurred backdrop
+        // at a new size every frame, and the drag has to track the finger exactly or it
+        // reads as broken.
         .offset(y: dragOffset)
-        // Shrinks slightly as it is pulled, which is what makes the drag read as
-        // "putting it away" rather than sliding a page.
-        .scaleEffect(1 - min(dragOffset / 3000, 0.06))
         .onAppear { dragOffset = 0 }
     }
 
@@ -68,10 +62,14 @@ struct NowPlayingView: View {
     /// so the gesture is explicit. A sheet was the alternative and was rejected: it
     /// cannot go edge to edge, and this screen is mostly artwork.
     private var dismissDrag: some Gesture {
-        DragGesture(minimumDistance: 12)
+        DragGesture(minimumDistance: 18)
             .onChanged { value in
-                // Downward only. Dragging up is not a dismissal, and allowing it
-                // would let the screen be pulled off the top.
+                // Vertical drags only. A sideways swipe is not a dismissal, and tracking
+                // it made the screen twitch whenever a horizontal gesture began.
+                guard abs(value.translation.height) > abs(value.translation.width) else {
+                    return
+                }
+                // Downward only: allowing up would let the screen be pulled off the top.
                 dragOffset = max(0, value.translation.height)
             }
             .onEnded { value in
@@ -91,6 +89,12 @@ struct NowPlayingView: View {
 
     /// A visible close button as well as the gesture: the previous version had only a
     /// 5pt capsule that happened to be tappable, which is not an affordance.
+    /// Queue and lyrics own the vertical scroll, so a full-screen drag would fight
+    /// them. The visualiser and artwork do not scroll, so there it can cover everything.
+    private var isScrollingMode: Bool {
+        mode == .queue || mode == .lyrics
+    }
+
     private var topBar: some View {
         HStack(spacing: Metrics.itemSpacing) {
             Button {
@@ -136,6 +140,7 @@ struct NowPlayingView: View {
         }
         .padding(.horizontal, 8)
         .contentShape(Rectangle())
+        .gesture(dismissDrag, including: isScrollingMode ? .all : .subviews)
     }
 
     private var source: String {
@@ -144,12 +149,17 @@ struct NowPlayingView: View {
     }
 
     /// Blurred artwork behind everything: the only place colour comes from content.
+    ///
+    /// `drawingGroup()` is not decoration. A 60pt blur over a full-screen image was
+    /// being recomputed on every frame of the dismiss drag, which is what made the
+    /// gesture stutter. Flattened into one texture, moving it is nearly free.
     private var backdrop: some View {
         ArtworkImage(id: player.currentSong?.coverArt, size: .full, cornerRadius: 0)
             .aspectRatio(contentMode: .fill)
             .frame(maxWidth: .infinity)
             .blur(radius: 60, opaque: true)
             .overlay(.black.opacity(0.45))
+            .drawingGroup()
             .ignoresSafeArea()
     }
 
@@ -269,35 +279,6 @@ struct NowPlayingView: View {
         return parts.isEmpty ? "Streaming" : parts.joined(separator: " · ")
     }
 
-    private var seekBar: some View {
-        VStack(spacing: 2) {
-            Slider(
-                value: Binding(
-                    get: { scrubValue ?? player.elapsed },
-                    set: { scrubValue = $0 }
-                ),
-                in: 0...max(player.duration, 1),
-                onEditingChanged: { editing in
-                    // Commit on release rather than seeking continuously.
-                    if !editing, let value = scrubValue {
-                        player.seek(to: value)
-                        scrubValue = nil
-                    }
-                }
-            )
-
-            HStack {
-                Text(Int(scrubValue ?? player.elapsed).asDuration)
-                Spacer()
-                Text(Int(max(player.duration - (scrubValue ?? player.elapsed), 0)).asDuration)
-            }
-            .font(.caption.monospacedDigit())
-            .foregroundStyle(.white.opacity(0.6))
-        }
-        .padding(.horizontal, 24)
-        .padding(.top, 6)
-    }
-
     private var transport: some View {
         HStack(spacing: 28) {
             Button { player.toggleShuffle() } label: {
@@ -375,6 +356,47 @@ struct NowPlayingView: View {
                 .foregroundStyle(isSelected ? Color.appTint : .white.opacity(0.6))
                 .frame(width: Metrics.minimumTouchTarget, height: Metrics.minimumTouchTarget)
         }
+    }
+}
+
+/// Its own view on purpose. It reads `elapsed`, which ticks four times a second, and
+/// under `@Observable` that invalidates whatever view read it -- so inside the player's
+/// body it was re-rendering the entire screen, blurred backdrop included, 4x/second.
+/// Scoped here, the tick repaints a slider and two labels.
+private struct PlayerSeekBar: View {
+    @Environment(AppState.self) private var appState
+
+    @State private var scrubValue: Double?
+
+    private var player: PlaybackController { appState.player }
+
+    var body: some View {
+        VStack(spacing: 2) {
+            Slider(
+                value: Binding(
+                    get: { scrubValue ?? player.elapsed },
+                    set: { scrubValue = $0 }
+                ),
+                in: 0...max(player.duration, 1),
+                onEditingChanged: { editing in
+                    // Commit on release rather than seeking continuously.
+                    if !editing, let value = scrubValue {
+                        player.seek(to: value)
+                        scrubValue = nil
+                    }
+                }
+            )
+
+            HStack {
+                Text(Int(scrubValue ?? player.elapsed).asDuration)
+                Spacer()
+                Text(Int(max(player.duration - (scrubValue ?? player.elapsed), 0)).asDuration)
+            }
+            .font(.caption.monospacedDigit())
+            .foregroundStyle(.white.opacity(0.6))
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 6)
     }
 }
 
