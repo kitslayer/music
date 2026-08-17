@@ -328,20 +328,27 @@ struct SavedQueue: Decodable, PayloadKeyed, Sendable {
 
     var songs: [Song] { entry ?? [] }
 
-    var changedAt: Date? {
-        guard let changed else { return nil }
-        return ISO8601DateFormatter().date(from: changed)
-            ?? ISO8601DateFormatter.withFractionalSeconds.date(from: changed)
-    }
+    var changedAt: Date? { ServerDate.parse(changed) }
 }
 
-extension ISO8601DateFormatter {
-    /// Navidrome includes fractional seconds, which the default formatter rejects.
-    static let withFractionalSeconds: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
+/// Parses the timestamps Navidrome returns.
+///
+/// A shared static formatter would be simpler and is what I reached for first, but
+/// `ISO8601DateFormatter` is a mutable class and not `Sendable`, so a `static let` of one
+/// is a data race under strict concurrency. Building one per call is cheap next to the
+/// network request that produced the string.
+enum ServerDate {
+    static func parse(_ value: String?) -> Date? {
+        guard let value else { return nil }
+
+        let plain = ISO8601DateFormatter()
+        if let date = plain.date(from: value) { return date }
+
+        // Navidrome includes fractional seconds, which the default options reject.
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return fractional.date(from: value)
+    }
 }
 
 struct ScanStatus: Decodable, PayloadKeyed, Sendable {
@@ -354,11 +361,7 @@ struct ScanStatus: Decodable, PayloadKeyed, Sendable {
 
     static var payloadKey: String { "scanStatus" }
 
-    var lastScanAt: Date? {
-        guard let lastScan else { return nil }
-        return ISO8601DateFormatter().date(from: lastScan)
-            ?? ISO8601DateFormatter.withFractionalSeconds.date(from: lastScan)
-    }
+    var lastScanAt: Date? { ServerDate.parse(lastScan) }
 }
 
 struct CreatedPlaylist: Decodable, PayloadKeyed, Sendable {
