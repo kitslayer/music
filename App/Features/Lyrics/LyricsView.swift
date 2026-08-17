@@ -1,0 +1,161 @@
+import SwiftUI
+
+struct LyricsView: View {
+    @Environment(AppState.self) private var appState
+
+    let song: Song
+
+    @State private var lyrics: StructuredLyrics?
+    @State private var state: LoadState = .loading
+    @State private var scrollPosition = ScrollPosition(idType: Int.self)
+    @State private var resumeAutoScrollAt: Date?
+    @State private var activeIndex: Int?
+
+    private enum LoadState { case loading, loaded, missing }
+
+    private var player: PlaybackController { appState.player }
+    private var lines: [LyricLine] { lyrics?.lines ?? [] }
+    private var isSynced: Bool { lyrics?.synced == true }
+
+    var body: some View {
+        Group {
+            switch state {
+            case .loading:
+                ProgressView()
+            case .missing:
+                missingState
+            case .loaded:
+                lyricsScroller
+            }
+        }
+        .task(id: song.id) { await load() }
+        // Only assign when the line actually changes: the observer fires ~5x/s but a
+        // track has ~40 lines, so this keeps re-renders in the tens, not thousands.
+        .onChange(of: currentLineIndex) { _, index in
+            guard index != activeIndex else { return }
+            activeIndex = index
+            guard shouldAutoScroll, let index else { return }
+            withAnimation(.easeInOut(duration: 0.4)) {
+                scrollPosition.scrollTo(id: index, anchor: UnitPoint(x: 0.5, y: 0.32))
+            }
+        }
+    }
+
+    private var lyricsScroller: some View {
+        ScrollView {
+            // A plain VStack, not lazy: Text is cheap, tracks run 30-150 lines, and
+            // programmatic scrolling to an unrealised lazy row silently no-ops.
+            VStack(spacing: 0) {
+                Spacer().frame(height: 140)
+
+                // Identity must be the index -- lyrics repeat, so `id: \.self` on the
+                // string would break both scrolling and highlighting.
+                ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+                    Text(line.value)
+                        .font(index == activeIndex
+                            ? .title2.weight(.bold)
+                            : .title3.weight(.semibold))
+                        .foregroundStyle(lineColor(for: index))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .multilineTextAlignment(.leading)
+                        .padding(.vertical, 10)
+                        .padding(.horizontal, 20)
+                        .id(index)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            guard isSynced, let start = line.start else { return }
+                            player.seek(to: Double(start + (lyrics?.offset ?? 0)) / 1000)
+                        }
+                }
+
+                Spacer().frame(height: 200)
+            }
+            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: activeIndex)
+        }
+        .scrollPosition($scrollPosition, anchor: UnitPoint(x: 0.5, y: 0.32))
+        // Touch it and auto-scroll stops dead; it resumes 4s after the scroll settles
+        // so the view never fights the user's finger.
+        .onScrollPhaseChange { _, phase in
+            if phase == .interacting || phase == .decelerating {
+                resumeAutoScrollAt = .distantFuture
+            } else if phase == .idle, resumeAutoScrollAt == .distantFuture {
+                resumeAutoScrollAt = .now.addingTimeInterval(4)
+            }
+        }
+        .overlay(alignment: .top) {
+            if !isSynced {
+                Text("Lyrics not timed")
+                    .font(.footnote)
+                    .foregroundStyle(.white.opacity(0.6))
+                    .padding(.top, 8)
+            }
+        }
+    }
+
+    private var missingState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "quote.bubble")
+                .font(.largeTitle)
+                .foregroundStyle(.tertiary)
+            Text("No lyrics for this track")
+                .font(.callout)
+                .foregroundStyle(.white.opacity(0.7))
+        }
+    }
+
+    private func lineColor(for index: Int) -> Color {
+        guard let activeIndex else { return .white.opacity(0.5) }
+        if index == activeIndex { return .white }
+        return .white.opacity(abs(index - activeIndex) >= 3 ? 0.3 : 0.5)
+    }
+
+    private var shouldAutoScroll: Bool {
+        guard isSynced else { return false }
+        if scrollPosition.isPositionedByUser { return false }
+        guard let resumeAutoScrollAt else { return true }
+        return resumeAutoScrollAt < .now
+    }
+
+    /// Binary search rather than a scan: called on every tick.
+    private var currentLineIndex: Int? {
+        guard isSynced, !lines.isEmpty else { return nil }
+
+        let now = Int(player.elapsed * 1000) - (lyrics?.offset ?? 0)
+        var low = 0
+        var high = lines.count - 1
+        var result: Int?
+
+        while low <= high {
+            let mid = (low + high) / 2
+            guard let start = lines[mid].start else {
+                low = mid + 1
+                continue
+            }
+            if start <= now {
+                result = mid
+                low = mid + 1
+            } else {
+                high = mid - 1
+            }
+        }
+        return result
+    }
+
+    private func load() async {
+        state = .loading
+        activeIndex = nil
+        resumeAutoScrollAt = nil
+
+        let sets = (try? await appState.client.lyrics(songID: song.id)) ?? []
+        guard !Task.isCancelled else { return }
+
+        // Prefer a synced set, then one matching the device language.
+        let preferredLanguage = Locale.preferredLanguages.first?.prefix(2).lowercased()
+        let synced = sets.filter(\.synced)
+        lyrics = synced.first { $0.lang?.lowercased().hasPrefix(preferredLanguage ?? "") == true }
+            ?? synced.first
+            ?? sets.first
+
+        state = (lyrics?.lines.isEmpty ?? true) ? .missing : .loaded
+    }
+}

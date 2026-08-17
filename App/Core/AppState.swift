@@ -15,12 +15,20 @@ final class AppState {
 
     private(set) var phase: Phase = .loading
     private(set) var credentials: SubsonicClient.Credentials?
+    /// Synchronous URL builder for media endpoints, held here so the player and the
+    /// artwork cache can build URLs without awaiting the client actor.
+    private(set) var signer: SubsonicSigner?
 
     let client = SubsonicClient()
     let artwork = ArtworkStore()
     let scope = LibraryScopeStore()
+    let player = PlaybackController()
 
     init() {
+        // Directories must exist before anything touches disk, and before a
+        // background download session can be relaunched into.
+        Paths.bootstrap()
+        player.attach(appState: self)
         Task { await restore() }
     }
 
@@ -35,9 +43,11 @@ final class AppState {
 
         credentials = saved
         await client.configure(saved)
-        artwork.configure(signer: await client.makeSigner())
+        signer = await client.makeSigner()
+        artwork.configure(signer: signer)
         phase = .ready
 
+        await player.restore()
         await loadServerContext()
     }
 
@@ -61,7 +71,8 @@ final class AppState {
 
         Keychain.save(candidate)
         credentials = candidate
-        artwork.configure(signer: await client.makeSigner())
+        signer = await client.makeSigner()
+        artwork.configure(signer: signer)
         phase = .ready
 
         await loadServerContext()
@@ -70,6 +81,7 @@ final class AppState {
     func signOut() async {
         Keychain.clear()
         credentials = nil
+        signer = nil
         await client.configure(nil)
         artwork.configure(signer: nil)
         phase = .needsSetup

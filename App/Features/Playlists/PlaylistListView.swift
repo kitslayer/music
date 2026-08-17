@@ -87,8 +87,19 @@ struct PlaylistDetailView: View {
             }
 
             // Playlist order is the server's order; never re-sorted.
-            ForEach(detail?.songs ?? []) { song in
-                SongRow(song: song, style: .withArtwork)
+            ForEach(Array((detail?.songs ?? []).enumerated()), id: \.element.id) { index, song in
+                Button {
+                    appState.player.play(
+                        songs: detail?.songs ?? [], startingAt: index, source: playlist.name
+                    )
+                } label: {
+                    SongRow(
+                        song: song,
+                        style: .withArtwork,
+                        isCurrent: appState.player.currentSong?.id == song.id
+                    )
+                }
+                .buttonStyle(.plain)
             }
         }
         .listStyle(.plain)
@@ -126,8 +137,20 @@ struct PlaylistDetailView: View {
                 }
             }
 
-            PlayShuffleButtons(onPlay: {}, onShuffle: {})
-                .padding(.horizontal, Metrics.gutter)
+            PlayShuffleButtons(
+                onPlay: {
+                    appState.player.play(
+                        songs: detail?.songs ?? [], startingAt: 0, source: playlist.name
+                    )
+                },
+                onShuffle: {
+                    appState.player.play(
+                        songs: detail?.songs ?? [], startingAt: 0,
+                        source: playlist.name, shuffled: true
+                    )
+                }
+            )
+            .padding(.horizontal, Metrics.gutter)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, Metrics.gutter)

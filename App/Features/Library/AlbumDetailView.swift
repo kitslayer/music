@@ -48,10 +48,33 @@ struct AlbumDetailView: View {
     @ViewBuilder
     private func songRows(_ list: [Song]) -> some View {
         ForEach(Array(list.enumerated()), id: \.element.id) { index, song in
-            SongRow(song: song, style: .numbered(song.track ?? index + 1))
-                // Separators start at the title, not under the number column.
-                .alignmentGuide(.listRowSeparatorLeading) { _ in 36 }
+            Button {
+                play(from: song)
+            } label: {
+                SongRow(
+                    song: song,
+                    style: .numbered(song.track ?? index + 1),
+                    isCurrent: appState.player.currentSong?.id == song.id
+                )
+            }
+            .buttonStyle(.plain)
+            // Separators start at the title, not under the number column.
+            .alignmentGuide(.listRowSeparatorLeading) { _ in 36 }
+            .contextMenu {
+                Button("Play Next", systemImage: "text.insert") {
+                    appState.player.playNext([song])
+                }
+                Button("Add to Queue", systemImage: "text.append") {
+                    appState.player.append([song])
+                }
+            }
         }
+    }
+
+    private func play(from song: Song) {
+        let all = songs
+        guard let index = all.firstIndex(where: { $0.id == song.id }) else { return }
+        appState.player.play(songs: all, startingAt: index, source: album.name)
     }
 
     private var header: some View {
@@ -79,8 +102,17 @@ struct AlbumDetailView: View {
                 }
             }
 
-            PlayShuffleButtons(onPlay: {}, onShuffle: {})
-                .padding(.horizontal, Metrics.gutter)
+            PlayShuffleButtons(
+                onPlay: {
+                    appState.player.play(songs: songs, startingAt: 0, source: album.name)
+                },
+                onShuffle: {
+                    appState.player.play(
+                        songs: songs, startingAt: 0, source: album.name, shuffled: true
+                    )
+                }
+            )
+            .padding(.horizontal, Metrics.gutter)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, Metrics.gutter)
