@@ -35,18 +35,29 @@ struct NowPlayingView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             if let song = player.currentSong {
-                metadata(song)
-                detailLine(song)
+                // The title block is its own drag surface in *every* mode, including
+                // queue and lyrics. It is the natural place to grab from and it never
+                // scrolls, so nothing competes for the gesture here.
+                VStack(spacing: 0) {
+                    metadata(song)
+                    detailLine(song)
+                }
+                .contentShape(Rectangle())
+                .gesture(dismissDrag)
+
                 PlayerSeekBar()
                 transport
                 volumeRow
                 bottomRow
             }
         }
-        // Exactly one gesture, on the root, so a drag is never handed between views
-        // mid-track. In the scrolling modes the root's copy is masked off and the top
-        // bar carries it instead -- the two masks are complements, so only one is ever
-        // live.
+        // `contentShape` is the fix for "it only works on the album art": empty layout
+        // space in a stack is not hit-testable, so a drag starting to the right of the
+        // title was landing on nothing at all. The artwork worked only because an image
+        // is opaque. This makes the whole screen a drag surface.
+        .contentShape(Rectangle())
+        // Masked off in the scrolling modes, where the queue and lyrics own the vertical
+        // pan; the top bar and the title block carry the gesture there instead.
         .gesture(dismissDrag, including: isScrollingMode ? .subviews : .all)
         .background(alignment: .top) { backdrop }
         // Offset only. A scale on top of this meant recompositing the blurred backdrop
@@ -226,6 +237,7 @@ struct NowPlayingView: View {
         }
         .padding(.horizontal, 24)
         .padding(.top, Metrics.itemSpacing)
+        .contentShape(Rectangle())
     }
 
     private func artistLabel(_ artist: String) -> some View {
