@@ -69,6 +69,10 @@ jobs:
             # rather than looking up a run id.
             - name: Publish to the rolling 'latest' release
               if: github.ref == 'refs/heads/main'
+              # Never fails the run. This workflow's real job is to tell me whether
+              # the Swift compiles; a GitHub upload outage must not turn that signal
+              # red, because then a genuine compile error is indistinguishable.
+              continue-on-error: true
               env:
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               run: |
@@ -78,10 +82,24 @@ jobs:
                   # continuation line silently invalidates the whole workflow.
                   printf 'Ad-hoc signed. Install with `xtool install Music.ipa`.\n\nCommit %s\n' \
                     "${GITHUB_SHA:0:7}" > "$RUNNER_TEMP/notes.md"
-                  gh release delete latest --repo "$GITHUB_REPOSITORY" --yes || true
-                  gh release create latest \
-                    "$RUNNER_TEMP/Music.ipa" \
-                    --repo "$GITHUB_REPOSITORY" \
-                    --title "Latest build" \
-                    --notes-file "$RUNNER_TEMP/notes.md" \
-                    --prerelease
+                  gh release delete latest --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
+
+                  # Retried: the asset upload endpoint returns 503 during GitHub
+                  # incidents, and a half-created release with no .ipa is worse than
+                  # none at all.
+                  for attempt in 1 2 3 4 5; do
+                    if gh release create latest \
+                      "$RUNNER_TEMP/Music.ipa" \
+                      --repo "$GITHUB_REPOSITORY" \
+                      --title "Latest build" \
+                      --notes-file "$RUNNER_TEMP/notes.md" \
+                      --prerelease; then
+                      echo "published"
+                      exit 0
+                    fi
+                    echo "attempt $attempt failed; cleaning up and retrying"
+                    gh release delete latest --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
+                    sleep 20
+                  done
+                  echo "could not publish the release; the artifact is still attached to this run"
+                  exit 1
