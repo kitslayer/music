@@ -64,3 +64,54 @@ struct ArtworkImage: View {
         didLoad = true
     }
 }
+/// Circular variant for artists.
+struct ArtistArtwork: View {
+    @Environment(ArtworkStore.self) private var store
+
+    let id: String?
+    var diameter: CGFloat
+    var initials: String?
+
+    @State private var image: UIImage?
+
+    var body: some View {
+        ZStack {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Circle()
+                    .fill(.quaternary)
+                    .overlay {
+                        // Navidrome without a Last.fm key returns no artist image,
+                        // so a monogram is the common case rather than the fallback.
+                        Text(initials ?? "?")
+                            .font(.system(size: diameter * 0.36, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+            }
+        }
+        .frame(width: diameter, height: diameter)
+        .clipShape(Circle())
+        .task(id: id) {
+            if let hit = store.cached(id, .thumb) {
+                image = hit
+                return
+            }
+            image = nil
+            let loaded = await store.image(for: id, size: .thumb)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.15)) { image = loaded }
+        }
+    }
+}
+
+extension String {
+    /// "Red Hot Chili Peppers" -> "RH"
+    var monogram: String {
+        let words = split(separator: " ").prefix(2)
+        return words.compactMap { $0.first }.map(String.init).joined().uppercased()
+    }
+}
+
