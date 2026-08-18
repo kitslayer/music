@@ -457,6 +457,13 @@ final class PlaybackController {
         if output.duration > 0, abs(output.duration - duration) > 0.5 {
             duration = output.duration
             tracker.trackChanged(to: queue.current, duration: duration)
+        } else if duration <= 0, let known = queue.current?.duration, known > 0 {
+            // Last resort, and the one that actually matters: whatever went wrong when
+            // this track started, the queue still knows how long it is. Checked every
+            // tick, so a duration that failed to apply once corrects itself within a
+            // quarter of a second instead of reading 0:00 for the whole track.
+            duration = Double(known)
+            tracker.trackChanged(to: queue.current, duration: duration)
         }
 
         // A stalled stream still ticks, so listening time is only credited while the
