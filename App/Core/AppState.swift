@@ -73,6 +73,10 @@ final class AppState {
             Task { await self?.flushOutbox() }
         }
 
+        // Intents cannot be injected into, so the running app is published here for
+        // them to find. Set last, once everything above is wired.
+        MusicIntentBridge.appState = self
+
         Task { await restore() }
     }
 
