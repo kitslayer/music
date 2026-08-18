@@ -85,10 +85,12 @@ private final class RealFFT: @unchecked Sendable {
 final class SpectrumAnalyser {
     /// Bars on screen. 24 reads as a spectrum on a phone; 64 turns into a smear at this
     /// width, and 12 looks like a level meter.
-    static let bandCount = 24
+    static let bandCount = 32
 
     /// Normalised 0...1 per band, already smoothed. What the view draws.
     private(set) var bands = [Float](repeating: 0, count: bandCount)
+    /// Per-band high-water mark that hangs, then falls. Drawn as the cap above each bar.
+    private(set) var peaks = [Float](repeating: 0, count: bandCount)
     /// True when audio is genuinely arriving, so the view can say "no signal" rather
     /// than implying silence.
     private(set) var isLive = false
@@ -101,8 +103,11 @@ final class SpectrumAnalyser {
     private var magnitudes: [Float]
 
     /// Band edges in bin space, spaced logarithmically: linear bins put three quarters
-    /// of the bars above 5 kHz, where there is nothing to see.
-    private let bandRanges: [Range<Int>]
+    /// of the bars above 5 kHz, where there is nothing to see. Recomputed when the
+    /// source rate changes, since the same bin means a different frequency at 48 kHz
+    /// than at 96.
+    private var bandRanges: [Range<Int>]
+    private var mappedRate: Double = 0
 
     private var ticker: Task<Void, Never>?
 
@@ -112,20 +117,24 @@ final class SpectrumAnalyser {
         samples = [Float](repeating: 0, count: size)
         magnitudes = [Float](repeating: 0, count: size / 2)
 
-        // 40 Hz to ~16 kHz. Below 40 is mostly rumble; above 16 k there is little in a
-        // 44.1 kHz source worth a whole bar.
-        let nyquist = 22050.0
+        bandRanges = Self.ranges(forRate: 44_100, size: size)
+        mappedRate = 44_100
+    }
+
+    /// Log-spaced band edges for a given sample rate.
+    private static func ranges(forRate rate: Double, size: Int) -> [Range<Int>] {
+        let nyquist = rate / 2
         let lowest = 40.0
-        let highest = 16000.0
-        var ranges: [Range<Int>] = []
-        for index in 0..<Self.bandCount {
-            let lowHz = lowest * pow(highest / lowest, Double(index) / Double(Self.bandCount))
-            let highHz = lowest * pow(highest / lowest, Double(index + 1) / Double(Self.bandCount))
-            let lowBin = max(1, Int(lowHz / nyquist * Double(size / 2)))
-            let highBin = min(size / 2, max(lowBin + 1, Int(highHz / nyquist * Double(size / 2))))
-            ranges.append(lowBin..<highBin)
+        // Just under Nyquist, so the top band is never empty on a 44.1 kHz source.
+        let highest = min(16_000.0, nyquist * 0.9)
+
+        return (0..<bandCount).map { index in
+            let low = lowest * pow(highest / lowest, Double(index) / Double(bandCount))
+            let high = lowest * pow(highest / lowest, Double(index + 1) / Double(bandCount))
+            let lowBin = max(1, Int(low / nyquist * Double(size / 2)))
+            let highBin = min(size / 2, max(lowBin + 1, Int(high / nyquist * Double(size / 2))))
+            return lowBin..<highBin
         }
-        bandRanges = ranges
     }
 
     /// Starts sampling at display rate. Only while a visualiser is actually on screen —
@@ -146,11 +155,19 @@ final class SpectrumAnalyser {
         ticker = nil
         // Fall to flat rather than freezing mid-bar.
         bands = [Float](repeating: 0, count: Self.bandCount)
+        peaks = [Float](repeating: 0, count: Self.bandCount)
         isLive = false
     }
 
     private func step() {
         isLive = buffer.isReceiving
+
+        let rate = buffer.sampleRate
+        if abs(rate - mappedRate) > 1 {
+            bandRanges = Self.ranges(forRate: rate, size: size)
+            mappedRate = rate
+        }
+
         buffer.snapshot(into: &samples)
         guard fft.magnitudes(of: samples, into: &magnitudes) else { return }
 
@@ -173,8 +190,14 @@ final class SpectrumAnalyser {
             let current = bands[index]
             let target = next[index]
             bands[index] = target > current
-                ? current + (target - current) * 0.6
-                : current + (target - current) * 0.16
+                ? current + (target - current) * 0.65
+                : current + (target - current) * 0.14
+
+            // The cap jumps to a new high instantly and then sinks, so a peak stays
+            // legible for a moment after the bar beneath it has dropped away.
+            peaks[index] = bands[index] > peaks[index]
+                ? bands[index]
+                : max(bands[index], peaks[index] - 0.012)
         }
     }
 }

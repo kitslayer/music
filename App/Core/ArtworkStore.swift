@@ -83,11 +83,126 @@ final class ArtworkStore {
         }
     }
 
+    /// Two colours pulled from a cover, for anything that should feel like it belongs to
+    /// the track rather than to the app.
+    ///
+    /// Saturation-weighted rather than a plain average: averaging a whole sleeve returns
+    /// mud roughly every time, because the bright and dark halves cancel. Weighting by
+    /// how colourful a pixel is finds the ink instead of the paper.
+    struct Palette: Sendable, Equatable {
+        var base: UIColor
+        var highlight: UIColor
+    }
+
+    private var palettes: [String: Palette] = [:]
+
+    /// Synchronous, and nil until the artwork itself is in memory — the caller falls back
+    /// to the app tint, then gets the real one on the next pass.
+    func palette(for id: String?) -> Palette? {
+        guard let id else { return nil }
+        if let cached = palettes[id] { return cached }
+        guard let image = memory.object(forKey: key(id, .thumb)) else { return nil }
+
+        guard let palette = Self.extractPalette(from: image) else { return nil }
+        palettes[id] = palette
+        return palette
+    }
+
+    private static func extractPalette(from image: UIImage) -> Palette? {
+        // Downsampled to 16x16 first: reading a 160pt image pixel by pixel on the main
+        // actor would be visible as a stutter, and sixteen squared is plenty to find a
+        // dominant hue.
+        let side = 16
+        guard let cgImage = image.cgImage else { return nil }
+
+        var pixels = [UInt8](repeating: 0, count: side * side * 4)
+        guard let context = CGContext(
+            data: &pixels,
+            width: side,
+            height: side,
+            bitsPerComponent: 8,
+            bytesPerRow: side * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: side, height: side))
+
+        var weightedRed = 0.0
+        var weightedGreen = 0.0
+        var weightedBlue = 0.0
+        var totalWeight = 0.0
+        var brightest = (red: 0.0, green: 0.0, blue: 0.0, score: -1.0)
+
+        for index in stride(from: 0, to: pixels.count, by: 4) {
+            let red = Double(pixels[index]) / 255
+            let green = Double(pixels[index + 1]) / 255
+            let blue = Double(pixels[index + 2]) / 255
+
+            let peak = max(red, green, blue)
+            let trough = min(red, green, blue)
+            let saturation = peak <= 0 ? 0 : (peak - trough) / peak
+
+            // Near-black and near-white pixels say nothing about a sleeve's colour.
+            let usefulness = saturation * (1 - abs(peak - 0.6) * 0.8)
+            let weight = max(usefulness, 0.02)
+
+            weightedRed += red * weight
+            weightedGreen += green * weight
+            weightedBlue += blue * weight
+            totalWeight += weight
+
+            let score = saturation * peak
+            if score > brightest.score {
+                brightest = (red, green, blue, score)
+            }
+        }
+
+        guard totalWeight > 0 else { return nil }
+
+        let base = UIColor(
+            red: weightedRed / totalWeight,
+            green: weightedGreen / totalWeight,
+            blue: weightedBlue / totalWeight,
+            alpha: 1
+        )
+
+        // Lifted well clear of the base so a gradient between them actually reads as a
+        // gradient on a dark background.
+        let highlight = UIColor(
+            red: min(brightest.red * 1.25 + 0.15, 1),
+            green: min(brightest.green * 1.25 + 0.15, 1),
+            blue: min(brightest.blue * 1.25 + 0.15, 1),
+            alpha: 1
+        )
+
+        return Palette(base: Self.lifted(base), highlight: highlight)
+    }
+
+    /// A sleeve that is nearly black would otherwise give bars that cannot be seen
+    /// against a black backdrop.
+    private static func lifted(_ colour: UIColor) -> UIColor {
+        var hue: CGFloat = 0
+        var saturation: CGFloat = 0
+        var brightness: CGFloat = 0
+        var alpha: CGFloat = 0
+        guard colour.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+        else { return colour }
+
+        return UIColor(
+            hue: hue,
+            saturation: max(saturation, 0.45),
+            brightness: max(brightness, 0.55),
+            alpha: 1
+        )
+    }
+
     func configure(signer: SubsonicSigner?) {
         self.signer = signer
         if signer == nil {
             memory.removeAllObjects()
             inFlight.removeAll()
+            palettes.removeAll()
         }
     }
 

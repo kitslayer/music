@@ -43,7 +43,14 @@ enum AudioTap {
                 buffer.takeUnretainedValue().markStopped()
                 buffer.release()
             },
-            prepare: nil,
+            prepare: { tap, _, processingFormat in
+                // The only place the real sample rate is available: it is whatever the
+                // item decodes to, which is not necessarily the hardware rate.
+                let storage = MTAudioProcessingTapGetStorage(tap)
+                Unmanaged<AudioSampleBuffer>.fromOpaque(storage)
+                    .takeUnretainedValue()
+                    .sampleRate = processingFormat.pointee.mSampleRate
+            },
             unprepare: nil,
             process: { tap, numberFrames, _, bufferListInOut, numberFramesOut, flagsOut in
                 let status = MTAudioProcessingTapGetSourceAudio(

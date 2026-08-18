@@ -87,6 +87,8 @@ final class EngineOutput: AudioOutput {
         spectrum = buffer
 
         let format = mixer.outputFormat(forBus: 0)
+        buffer.sampleRate = format.sampleRate
+
         mixer.installTap(onBus: 0, bufferSize: 1024, format: format) { audioBuffer, _ in
             // Audio thread. One channel, one copy, nothing else.
             guard let channel = audioBuffer.floatChannelData?[0] else { return }

@@ -19,13 +19,25 @@ import Foundation
 /// away with a lock that must not exist.
 final class AudioSampleBuffer: @unchecked Sendable {
     /// A power of two, because the FFT needs one and this way no copy has to resize.
-    static let capacity = 4096
+    ///
+    /// 2048 rather than 4096: at 48 kHz that is a 43 ms window instead of 85 ms, and the
+    /// longer one visibly smeared transients — a snare arrived as a slow swell. Frequency
+    /// resolution suffers, but for 32 log-spaced bars there is resolution to spare.
+    static let capacity = 2048
 
     private let storage: UnsafeMutablePointer<Float>
     /// Monotonic write cursor. Wraps by masking, so no modulo on the audio thread.
     private var writeIndex = 0
     /// Set by the producer, read by the UI to tell "silent" from "not running".
     private(set) var isReceiving = false
+
+    /// Written once by the producer before rendering starts.
+    ///
+    /// The analyser used to assume 44.1 kHz. The hardware usually runs at 48, and this
+    /// library has 96 kHz files, so every band was mapped to the wrong frequency — the
+    /// bars were showing the wrong part of the spectrum, consistently, by up to an
+    /// octave.
+    var sampleRate: Double = 48_000
 
     init() {
         storage = .allocate(capacity: Self.capacity)
