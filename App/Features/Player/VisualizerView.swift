@@ -21,6 +21,12 @@ struct VisualizerView: View {
     /// and clutter thereafter.
     @State private var labelShownAt: Date?
 
+    /// Set while the player is being dragged away. Redrawing a blurred Canvas every
+    /// frame while the whole screen is also being composited at an offset is what made
+    /// the dismiss gesture stutter, and the gesture matters more than the animation does
+    /// during the half second someone is putting the player away.
+    var isPaused = false
+
     enum Style: String, CaseIterable {
         case bars, wave, ring
 
@@ -41,9 +47,10 @@ struct VisualizerView: View {
     private var style: Style { Style(rawValue: rawStyle) ?? .bars }
 
     var body: some View {
-        // Redrawn on the display's own schedule rather than whenever the analyser
-        // happens to publish, so motion is smooth even though the data arrives at 30 Hz.
-        TimelineView(.animation) { _ in
+        // 30 Hz, matching the rate the analyser actually publishes at. Redrawing sixty
+        // times a second for thirty updates was half the work thrown away, and this is
+        // not cheap work: each frame draws a blurred layer.
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: isPaused)) { _ in
             Canvas(opaque: false) { context, size in
                 let bands = analyser.bands
                 let peaks = analyser.peaks
@@ -125,13 +132,20 @@ struct VisualizerView: View {
 
         // Drawn once into a blurred layer underneath, which is what gives the light a
         // source instead of the bars looking like stickers.
-        context.drawLayer { glow in
-            glow.addFilter(.blur(radius: 12))
-            glow.opacity = 0.55
-            for (index, value) in bands.enumerated() {
-                let rect = barRect(index: index, value: value, width: width,
-                                   spacing: spacing, baseline: baseline, maximum: maximum)
-                glow.fill(Path(roundedRect: rect, cornerRadius: width / 2), with: gradient(in: rect))
+        if !isPaused {
+            context.drawLayer { glow in
+                glow.addFilter(.blur(radius: 12))
+                glow.opacity = 0.55
+                for (index, value) in bands.enumerated() {
+                    let rect = barRect(
+                        index: index, value: value, width: width,
+                        spacing: spacing, baseline: baseline, maximum: maximum
+                    )
+                    glow.fill(
+                        Path(roundedRect: rect, cornerRadius: width / 2),
+                        with: gradient(in: rect)
+                    )
+                }
             }
         }
 
@@ -235,11 +249,13 @@ struct VisualizerView: View {
             endPoint: CGPoint(x: size.width / 2, y: centre + amplitude)
         )
 
-        context.drawLayer { glow in
-            glow.addFilter(.blur(radius: 16))
-            glow.opacity = 0.6
-            glow.fill(curve(sign: 1), with: shading)
-            glow.fill(curve(sign: -1), with: shading)
+        if !isPaused {
+            context.drawLayer { glow in
+                glow.addFilter(.blur(radius: 16))
+                glow.opacity = 0.6
+                glow.fill(curve(sign: 1), with: shading)
+                glow.fill(curve(sign: -1), with: shading)
+            }
         }
 
         context.fill(curve(sign: 1), with: shading)
@@ -329,10 +345,12 @@ struct VisualizerView: View {
             }
         }
 
-        context.drawLayer { glow in
-            glow.addFilter(.blur(radius: 14))
-            glow.opacity = 0.6
-            spokes(into: glow)
+        if !isPaused {
+            context.drawLayer { glow in
+                glow.addFilter(.blur(radius: 14))
+                glow.opacity = 0.6
+                spokes(into: glow)
+            }
         }
         spokes(into: context)
     }

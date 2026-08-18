@@ -201,7 +201,7 @@ struct NowPlayingView: View {
                 }
 
             case .visualizer:
-                VisualizerView()
+                VisualizerView(isPaused: dragOffset != 0)
             }
         }
         .animation(.easeInOut(duration: 0.25), value: mode)
