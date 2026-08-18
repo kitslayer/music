@@ -13,6 +13,7 @@ struct MusicApp: App {
                 .environment(appState)
                 .environment(appState.artwork)
                 .environment(appState.playlistArtwork)
+                .environment(appState.history)
                 .environment(appState.scope)
                 .environment(appState.userState)
                 .environment(appState.playlistStore)

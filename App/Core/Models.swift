@@ -357,6 +357,26 @@ enum ServerDate {
     }
 }
 
+/// A track another client is playing right now. The song fields are inlined by the
+/// server rather than nested, so this repeats them rather than embedding a `Song`.
+struct NowPlayingEntry: Codable, Identifiable, Sendable {
+    let id: String
+    var title: String?
+    var artist: String?
+    var album: String?
+    var coverArt: String?
+    /// Which client, e.g. "Feishin" or "Music".
+    var playerName: String?
+    var username: String?
+    /// Minutes since it started.
+    var minutesAgo: Int?
+}
+
+struct NowPlayingList: Codable, PayloadKeyed, Sendable {
+    var entry: [NowPlayingEntry]?
+    static var payloadKey: String { "nowPlaying" }
+}
+
 struct ScanStatus: Codable, PayloadKeyed, Sendable {
     var scanning: Bool
     var count: Int?

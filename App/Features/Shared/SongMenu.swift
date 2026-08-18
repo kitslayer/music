@@ -23,6 +23,14 @@ struct SongMenu: View {
     }
 
     var body: some View {
+        // A header rather than a row: it is information, not an action, and it puts the
+        // imported Plex counts somewhere they can finally be seen.
+        if let count = song.playCount, count > 0 {
+            Section("\(count) \(count == 1 ? "play" : "plays")") {
+                EmptyView()
+            }
+        }
+
         Button("Play Next", systemImage: "text.insert") {
             appState.player.playNext([song])
         }

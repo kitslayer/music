@@ -584,6 +584,14 @@ actor SubsonicClient {
         }
     }
 
+    // MARK: - Now playing elsewhere
+
+    /// What every client on this account is playing. Used to show that desktop Feishin
+    /// is running, which is otherwise invisible from the phone.
+    func nowPlaying() async throws -> [NowPlayingEntry] {
+        try await get("getNowPlaying.view", as: NowPlayingList.self).entry ?? []
+    }
+
     // MARK: - Library scan
 
     func scanStatus() async throws -> ScanStatus {

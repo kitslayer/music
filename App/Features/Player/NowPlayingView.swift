@@ -260,6 +260,11 @@ struct NowPlayingView: View {
 
             Text(qualityText(song))
 
+            if let count = song.playCount, count > 0 {
+                Text("·")
+                Text("\(count) \(count == 1 ? "play" : "plays")")
+            }
+
             if player.queue.order.count > 1 {
                 Text("·")
                 Text("\(player.queue.position + 1) of \(player.queue.order.count)")

@@ -336,6 +336,13 @@ final class PlaybackController {
     private func report(_ event: PlayTracker.Event, submission: Bool) {
         guard let appState else { return }
 
+        if submission, let song = queue.current, song.id == event.songID {
+            // Recorded here rather than in the tracker so the local history and the
+            // server's counts are written from the same decision -- they can differ in
+            // reach, but never in whether a play happened.
+            appState.history.record(song, at: event.listenedAt)
+        }
+
         guard submission else {
             // "Now playing" is ephemeral -- it expires on the server in minutes, so
             // queueing a stale one would be worse than losing it.

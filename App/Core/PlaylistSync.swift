@@ -22,6 +22,7 @@ final class PlaylistSync {
         static let enabled = "playlistSync.enabled"
         static let wifiOnly = "playlistSync.wifiOnly"
         static let excluded = "playlistSync.excludedIDs"
+        static let favourites = "playlistSync.favourites"
     }
 
     /// Default **on**: everything is kept offline unless told otherwise.
@@ -31,6 +32,12 @@ final class PlaylistSync {
 
     var isWiFiOnly: Bool {
         didSet { UserDefaults.standard.set(isWiFiOnly, forKey: Key.wifiOnly) }
+    }
+
+    /// Starred songs are kept too, by the same argument as playlists: they are the
+    /// tracks singled out as worth keeping, so "already there" is the right default.
+    var includesFavourites: Bool {
+        didSet { UserDefaults.standard.set(includesFavourites, forKey: Key.favourites) }
     }
 
     /// Playlists deliberately left out. Stored as ids so renaming one keeps the choice.
@@ -54,6 +61,7 @@ final class PlaylistSync {
         // mean "on" here and `bool` would report false.
         isEnabled = defaults.object(forKey: Key.enabled) as? Bool ?? true
         isWiFiOnly = defaults.object(forKey: Key.wifiOnly) as? Bool ?? true
+        includesFavourites = defaults.object(forKey: Key.favourites) as? Bool ?? true
         excludedIDs = Set(defaults.stringArray(forKey: Key.excluded) ?? [])
     }
 
@@ -110,6 +118,16 @@ final class PlaylistSync {
             // here, and removing the group removes the lot.
             downloads.download(missing, groupID: playlist.id, groupName: playlist.name)
             queued += missing.count
+        }
+
+        if includesFavourites, let starred = try? await client.starred() {
+            let missing = starred.songs.filter { downloads.status(for: $0.id) == .none }
+            if !missing.isEmpty {
+                // Their own group, so removing "Favourites" from Downloads does not
+                // take a playlist's copies with it.
+                downloads.download(missing, groupID: "favourites", groupName: "Favourites")
+                queued += missing.count
+            }
         }
 
         lastSummary = queued == 0

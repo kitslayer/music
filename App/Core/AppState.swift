@@ -31,6 +31,8 @@ final class AppState {
     let playlistSync = PlaylistSync()
     let cache = LibraryCache()
     let playlistArtwork = PlaylistArtwork()
+    let history = ListeningHistory()
+    let native = NavidromeClient()
     let downloads = DownloadCenter()
     let reachability = Reachability()
     let outbox = ServerOutbox()
@@ -85,6 +87,7 @@ final class AppState {
 
         credentials = saved
         await client.configure(saved)
+        await native.configure(saved)
         signer = await client.makeSigner()
         artwork.configure(signer: signer)
         phase = .ready
@@ -120,6 +123,7 @@ final class AppState {
 
         Keychain.save(candidate)
         credentials = candidate
+        await native.configure(candidate)
         signer = await client.makeSigner()
         artwork.configure(signer: signer)
         phase = .ready
@@ -132,6 +136,7 @@ final class AppState {
         credentials = nil
         signer = nil
         await client.configure(nil)
+        await native.configure(nil)
         artwork.configure(signer: nil)
         userState.reset()
         playlistStore.reset()

@@ -35,6 +35,7 @@ struct LibraryHubView: View {
                             ? nil
                             : "\(downloads.catalog.entries.count)"
                     )
+                    row("Stats", "chart.bar.xaxis", .stats)
                     row("Request Music", "arrow.down.heart", .requestMusic(""))
                     row("Settings", "gearshape", .settings)
                 }

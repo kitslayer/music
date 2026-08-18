@@ -19,6 +19,7 @@ enum Destination: Hashable {
     case requestSettings
     case offlineSettings
     case diagnostics
+    case stats
 }
 
 extension View {
@@ -62,6 +63,8 @@ extension View {
                 OfflineSettingsView()
             case .diagnostics:
                 DiagnosticsView()
+            case .stats:
+                StatsView()
             }
         }
     }

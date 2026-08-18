@@ -1,0 +1,217 @@
+import Foundation
+import Observation
+
+/// Every play this phone has counted, kept locally.
+///
+/// The server knows *how many* times a track has been played, but not **when** — Subsonic
+/// exposes a `playCount` and nothing else. So "top artists this month", "minutes listened
+/// this week" and anything shaped like a recap cannot be asked for; they have to be
+/// recorded as they happen.
+///
+/// Written at the same moment a scrobble is counted, so the local history and the
+/// server's counts can never disagree about what happened, only about how far back they
+/// can see.
+@MainActor
+@Observable
+final class ListeningHistory {
+    struct Play: Codable, Sendable, Identifiable {
+        var id = UUID()
+        let songID: String
+        let title: String
+        let artist: String
+        let album: String
+        let genre: String?
+        /// Seconds, so totals do not need the library to answer.
+        let duration: Int
+        let at: Date
+    }
+
+    private(set) var plays: [Play] = []
+
+    /// Roughly two years of heavy listening. Capped because this is read whole for every
+    /// statistic, and an unbounded array would eventually make the stats screen crawl.
+    private let limit = 20_000
+    private let url = Paths.root.appendingPathComponent("history.json")
+
+    init() {
+        if let data = try? Data(contentsOf: url),
+           let decoded = try? JSONDecoder().decode([Play].self, from: data) {
+            plays = decoded
+        }
+    }
+
+    func record(_ song: Song, at date: Date) {
+        plays.append(Play(
+            songID: song.id,
+            title: song.title,
+            artist: song.artist ?? "Unknown Artist",
+            album: song.album ?? "Unknown Album",
+            genre: song.genre,
+            duration: song.duration ?? 0,
+            at: date
+        ))
+        if plays.count > limit {
+            plays.removeFirst(plays.count - limit)
+        }
+        save()
+    }
+
+    func clear() {
+        plays = []
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    private func save() {
+        guard let data = try? JSONEncoder().encode(plays) else { return }
+        try? data.write(to: url, options: .atomic)
+    }
+
+    // MARK: - Statistics
+
+    enum Window: String, CaseIterable, Identifiable {
+        case week, month, year, all
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .week: return "Week"
+            case .month: return "Month"
+            case .year: return "Year"
+            case .all: return "All Time"
+            }
+        }
+
+        var start: Date? {
+            let calendar = Calendar.current
+            switch self {
+            case .week: return calendar.date(byAdding: .day, value: -7, to: .now)
+            case .month: return calendar.date(byAdding: .month, value: -1, to: .now)
+            case .year: return calendar.date(byAdding: .year, value: -1, to: .now)
+            case .all: return nil
+            }
+        }
+    }
+
+    func plays(in window: Window) -> [Play] {
+        guard let start = window.start else { return plays }
+        return plays.filter { $0.at >= start }
+    }
+
+    struct Ranked: Identifiable, Sendable {
+        let name: String
+        let count: Int
+        let seconds: Int
+        /// Carried so a row can show art without another lookup.
+        let subtitle: String?
+        var id: String { name }
+    }
+
+    func topArtists(in window: Window, limit: Int = 10) -> [Ranked] {
+        rank(plays(in: window), by: \.artist, limit: limit) { _ in nil }
+    }
+
+    func topAlbums(in window: Window, limit: Int = 10) -> [Ranked] {
+        let scoped = plays(in: window)
+        var artistByAlbum: [String: String] = [:]
+        for play in scoped { artistByAlbum[play.album] = play.artist }
+        return rank(scoped, by: \.album, limit: limit) { artistByAlbum[$0] }
+    }
+
+    func topSongs(in window: Window, limit: Int = 10) -> [Ranked] {
+        let scoped = plays(in: window)
+        var artistBySong: [String: String] = [:]
+        for play in scoped { artistBySong[play.title] = play.artist }
+        return rank(scoped, by: \.title, limit: limit) { artistBySong[$0] }
+    }
+
+    func topGenres(in window: Window, limit: Int = 6) -> [Ranked] {
+        let scoped = plays(in: window).filter { ($0.genre?.isEmpty == false) }
+        return rank(scoped, by: { $0.genre ?? "" }, limit: limit) { _ in nil }
+    }
+
+    private func rank(
+        _ source: [Play],
+        by key: (Play) -> String,
+        limit: Int,
+        subtitle: (String) -> String?
+    ) -> [Ranked] {
+        var counts: [String: (count: Int, seconds: Int)] = [:]
+        for play in source {
+            let name = key(play)
+            guard !name.isEmpty else { continue }
+            var entry = counts[name] ?? (0, 0)
+            entry.count += 1
+            entry.seconds += play.duration
+            counts[name] = entry
+        }
+
+        return counts
+            .map { Ranked(name: $0.key, count: $0.value.count, seconds: $0.value.seconds, subtitle: subtitle($0.key)) }
+            // Ties broken by name so the list does not reshuffle between renders.
+            .sorted { ($0.count, $1.name) > ($1.count, $0.name) }
+            .prefix(limit)
+            .map { $0 }
+    }
+
+    func totalSeconds(in window: Window) -> Int {
+        plays(in: window).reduce(0) { $0 + $1.duration }
+    }
+
+    /// Plays per hour of day, 0-23. The shape of this is the most personal thing in the
+    /// whole screen: it says whether someone is a morning listener or a 2 a.m. one.
+    func playsByHour(in window: Window) -> [Int] {
+        var buckets = [Int](repeating: 0, count: 24)
+        let calendar = Calendar.current
+        for play in plays(in: window) {
+            buckets[calendar.component(.hour, from: play.at)] += 1
+        }
+        return buckets
+    }
+
+    /// Plays per day for the last `days` days, oldest first, for the little bar chart.
+    func playsByDay(_ days: Int = 30) -> [(date: Date, count: Int)] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: .now)
+        var buckets: [Date: Int] = [:]
+
+        for play in plays {
+            let day = calendar.startOfDay(for: play.at)
+            guard let gap = calendar.dateComponents([.day], from: day, to: today).day,
+                  gap >= 0, gap < days
+            else { continue }
+            buckets[day, default: 0] += 1
+        }
+
+        return (0..<days).reversed().compactMap { offset in
+            guard let day = calendar.date(byAdding: .day, value: -offset, to: today) else {
+                return nil
+            }
+            return (date: day, count: buckets[day] ?? 0)
+        }
+    }
+
+    /// Consecutive days ending today (or yesterday) with at least one play.
+    var streak: Int {
+        let calendar = Calendar.current
+        let days = Set(plays.map { calendar.startOfDay(for: $0.at) })
+        guard !days.isEmpty else { return 0 }
+
+        var cursor = calendar.startOfDay(for: .now)
+        // Today not counting yet is normal at 9 a.m.; start from yesterday if so.
+        if !days.contains(cursor) {
+            guard let yesterday = calendar.date(byAdding: .day, value: -1, to: cursor),
+                  days.contains(yesterday)
+            else { return 0 }
+            cursor = yesterday
+        }
+
+        var count = 0
+        while days.contains(cursor) {
+            count += 1
+            guard let previous = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
+            cursor = previous
+        }
+        return count
+    }
+}
