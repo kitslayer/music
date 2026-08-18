@@ -419,6 +419,10 @@ private struct PlayerSeekBar: View {
 
     private var player: PlaybackController { appState.player }
 
+    /// A stream with no determinable length -- a server-side transcode is chunked, so
+    /// there is no duration and no seeking either.
+    private var hasKnownDuration: Bool { player.duration > 0 }
+
     var body: some View {
         VStack(spacing: 2) {
             Slider(
@@ -435,11 +439,20 @@ private struct PlayerSeekBar: View {
                     }
                 }
             )
+            // Disabled rather than hidden: the row keeps its height, so the controls
+            // below do not jump when a duration arrives a moment after playback starts.
+            .disabled(!hasKnownDuration)
+            .opacity(hasKnownDuration ? 1 : 0.35)
 
             HStack {
                 Text(Int(scrubValue ?? player.elapsed).asDuration)
                 Spacer()
-                Text(Int(max(player.duration - (scrubValue ?? player.elapsed), 0)).asDuration)
+                // Rather than "0:00", which reads as a bug -- and was one.
+                Text(
+                    hasKnownDuration
+                        ? Int(max(player.duration - (scrubValue ?? player.elapsed), 0)).asDuration
+                        : "--:--"
+                )
             }
             .font(.caption.monospacedDigit())
             .foregroundStyle(.white.opacity(0.6))

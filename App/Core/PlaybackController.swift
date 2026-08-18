@@ -448,7 +448,13 @@ final class PlaybackController {
 
         // The queue's duration comes from the server and can be absent or wrong; the
         // output knows the real one once the file or stream is open.
-        if duration == 0, output.duration > 0 {
+        //
+        // Adopted whenever it becomes known, not only while ours is still zero. The old
+        // guard meant a track with no server duration whose length the output could not
+        // determine at first stayed at 0:00 for its whole play -- the player showed
+        // "6:09 of 0:00" -- and it also meant a wrong server duration could never be
+        // corrected.
+        if output.duration > 0, abs(output.duration - duration) > 0.5 {
             duration = output.duration
             tracker.trackChanged(to: queue.current, duration: duration)
         }
