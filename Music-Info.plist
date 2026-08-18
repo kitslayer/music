@@ -9,7 +9,8 @@
 	<!-- Siri needs a name it can tell apart. App Shortcut phrases are required to
 	     contain the app name, and this app is called "Music", which Siri resolves to
 	     Apple Music every time. These are alternates Siri accepts for *this* app; the
-	     home screen still says Music. -->
+	     home screen still says Music. iOS allows a maximum of three; a fourth is
+	     rejected by installd at install time, not by the build. -->
 	<key>INAlternativeAppNames</key>
 	<array>
 		<dict>
@@ -21,10 +22,6 @@
 		<dict>
 			<key>INAlternativeAppName</key>
 			<string>Navi</string>
-		</dict>
-		<dict>
-			<key>INAlternativeAppName</key>
-			<string>Navi Music</string>
 		</dict>
 		<dict>
 			<key>INAlternativeAppName</key>
