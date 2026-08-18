@@ -6,6 +6,31 @@
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
 	<string>Music</string>
+	<!-- Siri needs a name it can tell apart. App Shortcut phrases are required to
+	     contain the app name, and this app is called "Music", which Siri resolves to
+	     Apple Music every time. These are alternates Siri accepts for *this* app; the
+	     home screen still says Music. -->
+	<key>INAlternativeAppNames</key>
+	<array>
+		<dict>
+			<key>INAlternativeAppName</key>
+			<string>Navidrome</string>
+			<key>INAlternativeAppNamePronunciationHint</key>
+			<string>navi drome</string>
+		</dict>
+		<dict>
+			<key>INAlternativeAppName</key>
+			<string>Navi</string>
+		</dict>
+		<dict>
+			<key>INAlternativeAppName</key>
+			<string>Navi Music</string>
+		</dict>
+		<dict>
+			<key>INAlternativeAppName</key>
+			<string>My Library</string>
+		</dict>
+	</array>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

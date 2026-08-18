@@ -149,8 +149,17 @@ struct ResumeMusicIntent: AppIntent {
     }
 }
 
-/// The phrases Siri accepts without opening Shortcuts first. `.applicationName` is
-/// substituted with the app's name, so "play my favourites in Music" works.
+/// The phrases Siri accepts without opening Shortcuts first.
+///
+/// `.applicationName` is **required** in every phrase — Apple will not register a shortcut
+/// without it — and it expands to the app name *and* every entry in `INAlternativeAppNames`.
+/// That is why those alternates exist: this app is called "Music", so "play my favourites
+/// in Music" is heard as Apple Music, and a bare "play X" goes to whichever media app has
+/// registered a media intent (Plexamp). Saying "in Navidrome" resolves it unambiguously.
+///
+/// Bare "play <something>" cannot be captured on a free account: that is `INPlayMediaIntent`
+/// in the SiriKit media domain, which needs the Siri capability, which needs a paid team.
+/// Plexamp has one, which is exactly why Siri prefers it.
 struct MusicShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
@@ -158,6 +167,7 @@ struct MusicShortcuts: AppShortcutsProvider {
             phrases: [
                 "Resume \(.applicationName)",
                 "Keep playing in \(.applicationName)",
+                "Continue \(.applicationName)",
             ],
             shortTitle: "Resume",
             systemImageName: "play.fill"
@@ -167,6 +177,7 @@ struct MusicShortcuts: AppShortcutsProvider {
             phrases: [
                 "Shuffle my library in \(.applicationName)",
                 "Shuffle \(.applicationName)",
+                "Shuffle my music in \(.applicationName)",
             ],
             shortTitle: "Shuffle Library",
             systemImageName: "shuffle"
@@ -184,6 +195,7 @@ struct MusicShortcuts: AppShortcutsProvider {
             intent: PlayPlaylistIntent(),
             phrases: [
                 "Play a playlist in \(.applicationName)",
+                "Play playlist in \(.applicationName)",
             ],
             shortTitle: "Play Playlist",
             systemImageName: "music.note.list"
