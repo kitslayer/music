@@ -27,6 +27,14 @@ struct NowPlayingView: View {
                 .toolbar(.hidden, for: .navigationBar)
                 .musicDestinations()
         }
+        // The offset belongs out here, on the outermost layer.
+        //
+        // Applied inside the stack it moved only the *content*: the navigation stack's
+        // own surface stayed exactly where it was and went on painting an opaque
+        // background, so pulling the player down revealed a black wall rather than the
+        // library. Whatever layer is opaque has to be the layer that moves.
+        .offset(y: dragOffset)
+        .onAppear { dragOffset = 0 }
     }
 
     private var playerBody: some View {
@@ -62,11 +70,6 @@ struct NowPlayingView: View {
         // pan; the top bar and the title block carry the gesture there instead.
         .gesture(dismissDrag, including: isScrollingMode ? .subviews : .all)
         .background(alignment: .top) { backdrop }
-        // Offset only. A scale on top of this meant recompositing the blurred backdrop
-        // at a new size every frame, and the drag has to track the finger exactly or it
-        // reads as broken.
-        .offset(y: dragOffset)
-        .onAppear { dragOffset = 0 }
     }
 
     // MARK: - Dismissal
