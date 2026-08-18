@@ -121,7 +121,13 @@ actor NavidromeClient {
         // One retry after a fresh login: the JWT expires, and the only way to find out is
         // to be told 401.
         for attempt in 0..<2 {
-            let bearer = try await (token ?? login())
+            // `token ?? login()` reads as an autoclosure, which cannot be async.
+            let bearer: String
+            if let existing = token {
+                bearer = existing
+            } else {
+                bearer = try await login()
+            }
 
             var components = URLComponents(
                 url: credentials.baseURL.appendingPathComponent(path),
