@@ -24,13 +24,26 @@ struct MainTabView: View {
                 tabs
             }
         }
-        .fullScreenCover(isPresented: $showsPlayer) {
-            NowPlayingView()
+        // Layered over the library rather than presented as a modal. A
+        // `fullScreenCover` removes the presenting view from the hierarchy, so while the
+        // player was being dragged down there was nothing behind it -- it slid away over
+        // an empty screen. As a sibling in a `ZStack` the library is genuinely there,
+        // and drops back slightly as the player comes up, which is what gives the
+        // gesture somewhere to go.
+        .overlay {
+            if showsPlayer {
+                NowPlayingView(onDismiss: { showsPlayer = false })
+                    .transition(.move(edge: .bottom))
+                    .zIndex(2)
+            }
         }
         .overlay(alignment: .bottom) { toast }
         .safeAreaInset(edge: .top) { remoteQueueBanner }
         .animation(.snappy(duration: 0.25), value: playlistStore.lastMessage)
         .animation(.snappy(duration: 0.25), value: queueSync.available)
+        // Matched to the drag's own spring so opening and closing feel like the same
+        // movement whether it was a tap or a swipe.
+        .animation(.spring(response: 0.38, dampingFraction: 0.86), value: showsPlayer)
     }
 
     /// Offered rather than applied. Another device's queue arriving unannounced and

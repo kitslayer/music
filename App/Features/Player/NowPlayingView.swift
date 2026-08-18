@@ -8,7 +8,9 @@ struct NowPlayingView: View {
     @Environment(AppState.self) private var appState
     @Environment(SleepTimer.self) private var sleepTimer
     @Environment(DownloadCenter.self) private var downloads
-    @Environment(\.dismiss) private var dismiss
+    /// Called instead of `dismiss()`: this is no longer a modal, it is a layer drawn
+    /// above the library, so closing it is the presenter's business.
+    var onDismiss: () -> Void = {}
 
     @State private var mode: PlayerMode = .artwork
     @State private var dragOffset: CGFloat = 0
@@ -69,9 +71,13 @@ struct NowPlayingView: View {
 
     // MARK: - Dismissal
 
-    /// `fullScreenCover` has no interactive dismiss of its own -- only `sheet` does --
-    /// so the gesture is explicit. A sheet was the alternative and was rejected: it
-    /// cannot go edge to edge, and this screen is mostly artwork.
+    /// The dismiss gesture, entirely hand-rolled.
+    ///
+    /// `fullScreenCover` had no interactive dismiss, and a `sheet` cannot go edge to edge
+    /// on a screen that is mostly artwork. It is now neither: the player is a layer above
+    /// the library, which is what lets the library show through as it is pulled down --
+    /// a modal removes the presenting view from the hierarchy entirely, so there was
+    /// literally nothing behind it to see.
     private var dismissDrag: some Gesture {
         // `.global` is the whole fix, and the reason this kept feeling broken no matter
         // what else was tuned: the gesture is attached to the same view that
@@ -96,7 +102,7 @@ struct NowPlayingView: View {
                 let isFastEnough = value.predictedEndTranslation.height > 320
 
                 if isFarEnough || isFastEnough {
-                    dismiss()
+                    onDismiss()
                 } else {
                     withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
                         dragOffset = 0
@@ -116,7 +122,7 @@ struct NowPlayingView: View {
     private var topBar: some View {
         HStack(spacing: Metrics.itemSpacing) {
             Button {
-                dismiss()
+                onDismiss()
             } label: {
                 Image(systemName: "chevron.down")
                     .font(.body.weight(.semibold))
