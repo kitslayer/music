@@ -44,4 +44,16 @@ struct AudioRoutePicker: UIViewRepresentable {
     }
 
     func updateUIView(_ view: AVRoutePickerView, context: Context) {}
+
+    /// Without this the view reports no intrinsic size and expands to fill whatever it
+    /// is given — which is how it ended up rendering many times larger than the icons
+    /// beside it. The glyph is drawn to the view's bounds, so the bounds *are* the icon
+    /// size, and this matches the `.title3` symbols it sits next to.
+    func sizeThatFits(
+        _ proposal: ProposedViewSize,
+        uiView: AVRoutePickerView,
+        context: Context
+    ) -> CGSize? {
+        CGSize(width: 22, height: 22)
+    }
 }

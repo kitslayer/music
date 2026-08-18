@@ -378,8 +378,11 @@ struct NowPlayingView: View {
             Spacer()
             modeButton(.queue, "list.bullet")
             Spacer()
+            // Fixed, not a minimum: this is a fixed-size glyph rather than text, and a
+            // minimum let it grow to fill the row. Centred in a touch-target-sized box.
             AudioRoutePicker()
-                .frame(minWidth: Metrics.minimumTouchTarget, minHeight: Metrics.minimumTouchTarget)
+                .frame(width: 22, height: 22)
+                .frame(width: Metrics.minimumTouchTarget, height: Metrics.minimumTouchTarget)
         }
         .padding(.horizontal, 20)
         .padding(.top, 4)
