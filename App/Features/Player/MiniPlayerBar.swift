@@ -60,6 +60,8 @@ struct MiniPlayerBar: View {
                 // Swipe up to expand, sideways to skip -- the gestures Plexamp and
                 // Apple Music both use.
                 .gesture(
+                    // Local is fine here: this bar is not moved by its own gesture, so
+                    // there is no moving ruler to correct for.
                     DragGesture(minimumDistance: 20)
                         .onEnded { value in
                             if value.translation.height < -30 {

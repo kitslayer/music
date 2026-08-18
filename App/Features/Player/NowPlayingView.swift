@@ -73,7 +73,14 @@ struct NowPlayingView: View {
     /// so the gesture is explicit. A sheet was the alternative and was rejected: it
     /// cannot go edge to edge, and this screen is mostly artwork.
     private var dismissDrag: some Gesture {
-        DragGesture(minimumDistance: 18)
+        // `.global` is the whole fix, and the reason this kept feeling broken no matter
+        // what else was tuned: the gesture is attached to the same view that
+        // `.offset(y: dragOffset)` moves, and a `DragGesture` measures translation in its
+        // own **local** space. So the finger moved the view, the view moved the space the
+        // finger was being measured in, and the next reading was taken against a moved
+        // ruler -- a feedback loop that reads as jitter. A global space does not move with
+        // the thing being dragged.
+        DragGesture(minimumDistance: 18, coordinateSpace: .global)
             .onChanged { value in
                 // Vertical drags only. A sideways swipe is not a dismissal, and tracking
                 // it made the screen twitch whenever a horizontal gesture began.
