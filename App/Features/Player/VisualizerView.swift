@@ -56,14 +56,14 @@ struct VisualizerView: View {
                 .padding(.trailing, 4)
         }
         // The analyser only runs while this is on screen; an FFT nobody is watching is
-        // pure battery drain.
+        // pure battery drain. The *tap* is not torn down with it -- see
+        // `setSpectrumSink` -- because changing the audio graph mid-playback is audible.
         .onAppear {
             appState.player.startSpectrum()
             analyser.start()
         }
         .onDisappear {
             analyser.stop()
-            appState.player.stopSpectrum()
         }
     }
 

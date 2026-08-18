@@ -81,12 +81,10 @@ final class EngineOutput: AudioOutput {
     /// Cheap here: the engine already has the samples in a tappable graph, so this is
     /// one block on the mixer rather than the C tap the streaming output needs.
     func setSpectrumSink(_ buffer: AudioSampleBuffer?) {
-        spectrum?.markStopped()
+        // Installed once and left alone: removing and reinstalling a tap on a running
+        // engine is audible, which is what made switching player modes click.
+        guard let buffer, spectrum == nil else { return }
         spectrum = buffer
-
-        // Removing first is required -- installing twice on one bus traps.
-        mixer.removeTap(onBus: 0)
-        guard let buffer else { return }
 
         let format = mixer.outputFormat(forBus: 0)
         mixer.installTap(onBus: 0, bufferSize: 1024, format: format) { audioBuffer, _ in

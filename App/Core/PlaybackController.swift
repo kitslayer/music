@@ -161,15 +161,13 @@ final class PlaybackController {
 
     // MARK: - Visualiser
 
+    /// There is deliberately no `stopSpectrum`. Detaching the tap means changing the
+    /// audio graph while it is running, which is audible, so once attached it stays --
+    /// the analyser stopping is what makes it free.
     func startSpectrum() {
         guard let appState else { return }
         spectrumSink = appState.spectrumBuffer
         output.setSpectrumSink(spectrumSink)
-    }
-
-    func stopSpectrum() {
-        output.setSpectrumSink(nil)
-        spectrumSink = nil
     }
 
     /// Called when the EQ or crossfade settings change. Reloads at the current

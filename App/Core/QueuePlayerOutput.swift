@@ -45,15 +45,22 @@ final class QueuePlayerOutput: AudioOutput {
     /// Turning it on also reaches the item already playing, so opening the visualiser
     /// mid-track shows something immediately instead of waiting for the next one. Track
     /// loading is async, hence the `Task`; `audioMix` can be set on a playing item.
+    /// Attaches the tap, and **never detaches it**.
+    ///
+    /// Mutating `audioMix` on a *playing* item makes AVFoundation rebuild its audio
+    /// processing graph, which is audible as a break in playback. Tearing the tap down
+    /// whenever the visualiser left the screen therefore made every switch between
+    /// artwork, lyrics and the visualiser click.
+    ///
+    /// The tap is a passthrough that does one `memcpy`, so leaving it in place costs
+    /// effectively nothing and the analyser simply stops reading. Attaching once, on the
+    /// first visualiser open, is the only graph change that happens.
     func setSpectrumSink(_ buffer: AudioSampleBuffer?) {
-        spectrum?.markStopped()
+        guard let buffer, spectrum == nil else { return }
         spectrum = buffer
 
-        guard let buffer else {
-            for item in player.items() { item.audioMix = nil }
-            return
-        }
-
+        // Future items pick it up in `makeItem`, before they are playing. Only the item
+        // already playing has to be changed underneath, and only this once.
         if let item = player.currentItem {
             Task { await attachTap(to: item, feeding: buffer) }
         }
@@ -155,6 +162,14 @@ final class QueuePlayerOutput: AudioOutput {
         let asset = AVURLAsset(url: location.url, options: options)
         let item = AVPlayerItem(asset: asset)
         itemToSongID[ObjectIdentifier(item)] = song.id
+
+        // Set here rather than when the item becomes current: an item in the preload
+        // window is not playing yet, so giving it a mix now costs nothing, where doing it
+        // at the track boundary would click.
+        if let spectrum {
+            Task { await attachTap(to: item, feeding: spectrum) }
+        }
+
         return item
     }
 
@@ -178,10 +193,6 @@ final class QueuePlayerOutput: AudioOutput {
     private func tick(_ time: CMTime) {
         if player.currentItem !== expectedItem {
             expectedItem = player.currentItem
-            // The next track needs its own tap; a mix belongs to one item.
-            if let buffer = spectrum, let item = player.currentItem {
-                Task { await attachTap(to: item, feeding: buffer) }
-            }
             let songID = player.currentItem.flatMap { itemToSongID[ObjectIdentifier($0)] }
             onAdvanced?(songID)
             return
