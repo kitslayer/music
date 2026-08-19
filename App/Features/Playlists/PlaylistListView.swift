@@ -288,7 +288,8 @@ struct PlaylistDetailView: View {
                 id: detail?.coverArt ?? playlist.coverArt,
                 size: .full,
                 cornerRadius: Metrics.radiusHeader,
-                playlistID: playlist.id
+                playlistID: playlist.id,
+                fallbackText: playlist.name
             )
             .aspectRatio(1, contentMode: .fit)
             .frame(maxWidth: Metrics.detailArtwork)

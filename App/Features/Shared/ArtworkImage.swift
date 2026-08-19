@@ -11,6 +11,12 @@ struct ArtworkImage: View {
     var cornerRadius: CGFloat = Metrics.radiusCard
     /// When set, a locally chosen image for this playlist wins over `id`.
     var playlistID: String?
+    /// Album or playlist name, used to draw initials when there is no art.
+    ///
+    /// 274 of this library's 2,227 albums have no cover anywhere — not embedded, not a
+    /// `cover.jpg` beside the tracks — and a grid of identical grey music notes is the
+    /// worst possible way to show that. Initials at least tell them apart.
+    var fallbackText: String?
 
     @State private var image: UIImage?
     @State private var didLoad = false
@@ -52,9 +58,20 @@ struct ArtworkImage: View {
         Rectangle()
             .fill(.quaternary)
             .overlay {
-                Image(systemName: "music.note")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
+                if let monogram = fallbackText?.monogram, !monogram.isEmpty {
+                    // Scaled to the box rather than a fixed size: the same view draws a
+                    // 40pt row thumbnail and a 300pt header.
+                    Text(monogram)
+                        .font(.system(size: 200, weight: .semibold, design: .rounded))
+                        .minimumScaleFactor(0.01)
+                        .lineLimit(1)
+                        .foregroundStyle(.secondary)
+                        .padding(8)
+                } else {
+                    Image(systemName: "music.note")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                }
             }
     }
 

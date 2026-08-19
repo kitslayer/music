@@ -107,7 +107,10 @@ struct AlbumDetailView: View {
 
     private var header: some View {
         VStack(spacing: Metrics.headerToContent) {
-            ArtworkImage(id: album.coverArt, size: .full, cornerRadius: Metrics.radiusHeader)
+            ArtworkImage(
+                id: album.coverArt, size: .full,
+                cornerRadius: Metrics.radiusHeader, fallbackText: album.name
+            )
                 .aspectRatio(1, contentMode: .fit)
                 .frame(maxWidth: Metrics.detailArtwork)
                 .shadow(radius: 12, y: 6)
