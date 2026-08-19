@@ -44,6 +44,7 @@ struct MusicApp: App {
                         // Backgrounding does not kill the app while audio plays, but
                         // termination while paused is common and silent.
                         appState.player.persistNow()
+                        appState.history.saveNow()
                     default:
                         break
                     }

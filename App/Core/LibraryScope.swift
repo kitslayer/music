@@ -25,6 +25,13 @@ enum LibraryScope: Hashable, Sendable {
         if case let .folder(_, name) = self { return name }
         return "All"
     }
+
+    /// Part of a cache filename, so every cached list is scoped to the folder it came
+    /// from. Defined once here because six screens need it and a per-screen version
+    /// would eventually disagree with itself.
+    var cacheKey: String {
+        folderID.map(String.init) ?? "all"
+    }
 }
 
 @MainActor

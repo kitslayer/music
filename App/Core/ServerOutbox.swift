@@ -21,8 +21,14 @@ actor ServerOutbox {
     }
 
     struct Pending: Codable, Sendable {
-        /// Defaulted so files written by the scrobble-only version still decode.
-        var kind: Kind = .scrobble
+        /// **Optional, not defaulted.** A default does not make a key optional to
+        /// decode: Swift's synthesized `init(from:)` calls `decode(_:forKey:)` for any
+        /// non-optional property and throws when the key is absent, whatever default is
+        /// written here. This field was added after the outbox already existed, so with
+        /// a default every file written by the scrobble-only version failed to decode --
+        /// and `flush` deletes files it cannot decode, silently discarding plays that
+        /// were owed. Optional is the only shape that actually migrates.
+        private var kind_: Kind?
         let songID: String
         /// When it happened, which is what gets submitted for a scrobble — not now.
         let listenedAt: Date
@@ -30,7 +36,39 @@ actor ServerOutbox {
         var target: String?
         /// `rating` only.
         var rating: Int?
-        var attempts: Int = 0
+        /// Same reasoning as `kind_`, though this one has been present since the start.
+        private var attempts_: Int?
+
+        /// A file with no `kind` predates the field, and everything back then was a play.
+        var kind: Kind { kind_ ?? .scrobble }
+        var attempts: Int {
+            get { attempts_ ?? 0 }
+            set { attempts_ = newValue }
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case kind_ = "kind"
+            case songID
+            case listenedAt
+            case target
+            case rating
+            case attempts_ = "attempts"
+        }
+
+        init(
+            kind: Kind = .scrobble,
+            songID: String,
+            listenedAt: Date,
+            target: String? = nil,
+            rating: Int? = nil
+        ) {
+            kind_ = kind
+            self.songID = songID
+            self.listenedAt = listenedAt
+            self.target = target
+            self.rating = rating
+            attempts_ = 0
+        }
     }
 
     private let directory: URL

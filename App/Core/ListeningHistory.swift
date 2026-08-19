@@ -32,6 +32,7 @@ final class ListeningHistory {
     /// statistic, and an unbounded array would eventually make the stats screen crawl.
     private let limit = 20_000
     private let url = Paths.root.appendingPathComponent("history.json")
+    private var saveTask: Task<Void, Never>?
 
     init() {
         if let data = try? Data(contentsOf: url),
@@ -53,12 +54,34 @@ final class ListeningHistory {
         if plays.count > limit {
             plays.removeFirst(plays.count - limit)
         }
-        save()
+        scheduleSave()
     }
 
     func clear() {
         plays = []
         try? FileManager.default.removeItem(at: url)
+    }
+
+    /// Debounced, because `save()` encodes the **entire** log.
+    ///
+    /// At the 20,000-entry cap that is a multi-megabyte encode and an atomic write on the
+    /// main actor, and it was running at every track boundary -- precisely when the player
+    /// is also rebuilding its output window. Same idiom as
+    /// `PlaybackController.persist()`: coalesce the writes, and force one when the app
+    /// goes to the background, which is the only moment the process may not come back.
+    private func scheduleSave() {
+        saveTask?.cancel()
+        saveTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled else { return }
+            self?.save()
+        }
+    }
+
+    func saveNow() {
+        saveTask?.cancel()
+        saveTask = nil
+        save()
     }
 
     private func save() {

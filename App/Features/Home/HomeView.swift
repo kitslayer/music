@@ -17,7 +17,7 @@ struct HomeView: View {
                             Text("Couldn't reach the server, or the library is empty.")
                         } actions: {
                             Button("Try again") {
-                                Task { await model.load(client: appState.client, scope: scope.scope) }
+                                Task { await model.load(appState: appState, scope: scope.scope) }
                             }
                         }
                         .padding(.top, 60)
@@ -55,10 +55,10 @@ struct HomeView: View {
                 }
             }
             .refreshable {
-                await model.load(client: appState.client, scope: scope.scope)
+                await model.load(appState: appState, scope: scope.scope)
             }
             .task(id: scope.generation) {
-                await model.load(client: appState.client, scope: scope.scope)
+                await model.load(appState: appState, scope: scope.scope)
             }
         }
     }
@@ -97,12 +97,23 @@ struct HomeView: View {
             VStack(alignment: .leading, spacing: Metrics.headerToContent) {
                 ShelfHeader(title: "Favourites", seeAll: .favorites)
 
+                // `PlayableSongRow`, not a bare `SongRow`: these rows had a
+                // `contentShape` and nothing to receive the tap, so unlike every other
+                // song list in the app they did nothing at all -- no play, no menu.
+                //
+                // Swipe actions still will not work here, because `.swipeActions` only
+                // functions inside a `List` and Home is a `ScrollView`. Tap and
+                // long-press do, which is the same trade `ArtistDetailView` makes for its
+                // Top Songs block. Not worth turning Home into a `List` for.
                 VStack(spacing: 0) {
-                    ForEach(model.favoriteSongs) { song in
-                        SongRow(song: song, style: .withArtwork)
-                            .padding(.horizontal, Metrics.gutter)
-                            .padding(.vertical, 6)
-                            .contentShape(Rectangle())
+                    ForEach(Array(model.favoriteSongs.enumerated()), id: \.element.id) { index, _ in
+                        PlayableSongRow(
+                            songs: model.favoriteSongs,
+                            index: index,
+                            source: "Favourites"
+                        )
+                        .padding(.horizontal, Metrics.gutter)
+                        .padding(.vertical, 6)
                     }
                 }
             }
@@ -146,11 +157,28 @@ final class HomeModel {
 
     /// Shelves load concurrently and a failing shelf is simply dropped: one dead
     /// endpoint should not replace the whole screen with an error.
-    func load(client: SubsonicClient, scope: LibraryScope) async {
-        async let played = try? client.albums(type: .recent, size: 12, scope: scope)
-        async let added = try? client.albums(type: .newest, size: 12, scope: scope)
-        async let frequent = try? client.albums(type: .frequent, size: 12, scope: scope)
-        async let starred = try? client.starred(scope: scope)
+    ///
+    /// Each goes through `appState.cached`, so Home is the same screen offline as on --
+    /// which it was not before: every shelf simply came back empty, and an empty Home
+    /// reads as a broken app rather than an offline one.
+    func load(appState: AppState, scope: LibraryScope) async {
+        appState.beginLoadPass()
+
+        let client = appState.client
+        let key = scope.cacheKey
+
+        async let played: [Album]? = appState.cached(CacheKey.shelf("recent", key)) {
+            try await client.albums(type: .recent, size: 12, scope: scope)
+        }
+        async let added: [Album]? = appState.cached(CacheKey.shelf("newest", key)) {
+            try await client.albums(type: .newest, size: 12, scope: scope)
+        }
+        async let frequent: [Album]? = appState.cached(CacheKey.shelf("frequent", key)) {
+            try await client.albums(type: .frequent, size: 12, scope: scope)
+        }
+        async let starred: Starred2? = appState.cached(CacheKey.starred(key)) {
+            try await client.starred(scope: scope)
+        }
 
         recentlyPlayed = await played ?? []
         recentlyAdded = await added ?? []

@@ -54,7 +54,15 @@ struct GenreListView: View {
     private func load() async {
         // Sorted by album count: 366 genres alphabetically is a wall of noise,
         // while the largest genres are what you actually browse.
-        genres = ((try? await appState.client.genres(scope: scope.scope)) ?? [])
+        let client = appState.client
+        let currentScope = scope.scope
+        appState.beginLoadPass()
+        let fetched: [Genre] = await appState.cached(
+            CacheKey.genres(currentScope.cacheKey)
+        ) {
+            try await client.genres(scope: currentScope)
+        } ?? []
+        genres = fetched
             .sorted { ($0.albumCount ?? 0) > ($1.albumCount ?? 0) }
     }
 }

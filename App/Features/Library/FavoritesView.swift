@@ -79,7 +79,13 @@ struct FavoritesView: View {
 
     private func load() async {
         isLoading = true
-        starred = try? await appState.client.starred(scope: scope.scope)
+        let client = appState.client
+        let currentScope = scope.scope
+        appState.beginLoadPass()
+        // Shares its key with Home's favourites shelf, deliberately: same data, one copy.
+        starred = await appState.cached(CacheKey.starred(currentScope.cacheKey)) {
+            try await client.starred(scope: currentScope)
+        }
         isLoading = false
     }
 }

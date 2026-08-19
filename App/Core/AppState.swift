@@ -173,10 +173,18 @@ final class AppState {
         _ fetch: @escaping @Sendable () async throws -> T
     ) async -> T? {
         let (value, isStale) = await cache.value(for: key, fetch: fetch)
-        // One place decides whether the app is offline, rather than each screen
-        // guessing from its own failed request.
-        isShowingCachedData = isStale && value != nil
+        // Only ever raised, never lowered. Home loads four shelves concurrently, so an
+        // assignment here meant the last fetch to finish decided the answer for all of
+        // them -- one stale shelf among three fresh ones silently cleared the flag.
+        // `beginLoadPass()` is what lowers it, once, before a screen starts loading.
+        if isStale, value != nil { isShowingCachedData = true }
         return value
+    }
+
+    /// Call before a screen begins a round of loads. Resets the staleness flag so it
+    /// reflects this pass rather than the last one.
+    func beginLoadPass() {
+        isShowingCachedData = false
     }
 
     /// Adopts a queue saved by another client, at its position, **paused**. Resuming
@@ -212,7 +220,12 @@ final class AppState {
     private func loadServerContext() async {
         await client.loadCapabilities()
 
-        if let folders = try? await client.musicFolders() {
+        // Cached so the scope switcher still exists after a cold launch with no network;
+        // without it the control simply vanishes and the app looks single-library.
+        let client = self.client
+        if let folders: [MusicFolder] = await cached(CacheKey.musicFolders, {
+            try await client.musicFolders()
+        }) {
             scope.adopt(folders: folders)
         }
     }

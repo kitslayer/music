@@ -82,7 +82,12 @@ struct ArtistListView: View {
 
     private func load() async {
         isLoading = true
-        indexes = (try? await appState.client.artists(scope: scope.scope)) ?? []
+        let client = appState.client
+        let currentScope = scope.scope
+        appState.beginLoadPass()
+        indexes = await appState.cached(CacheKey.artistIndex(currentScope.cacheKey)) {
+            try await client.artists(scope: currentScope)
+        } ?? []
         isLoading = false
     }
 }
