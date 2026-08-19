@@ -106,10 +106,10 @@ actor NavidromeClient {
     /// in a year", which is not answerable any other way: `getStarred2` returns favourites
     /// in no useful order and carries no play date at all.
     ///
-    /// Verified against this server: `starred=true` does combine with the `playDate` sort.
-    /// All 66 favourites here have been played at least once, so where a never-played
-    /// favourite lands in an ascending sort is untested — treat a nil `playDate` as
-    /// "forgotten", wherever it turns up.
+    /// Verified against this server: `starred=true` combines with the `playDate` sort, and
+    /// an ascending sort puts **never-played tracks first** — a nil date sorts before any
+    /// date. That is the right order here: a favourite you have never actually played is
+    /// the most forgotten thing there is.
     func forgottenFavourites(limit: Int = 50) async throws -> [Song] {
         try await songs(
             matching: ["starred": "true"],

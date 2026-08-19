@@ -7,6 +7,8 @@ struct AlbumListView: View {
     var initialSort: AlbumSort = .newest
     /// Set when this list is a genre drill-down.
     var genre: String?
+    /// Set when this list is a decade drill-down; the first year, so 1990 means 1990-1999.
+    var decade: Int?
 
     @State private var albums: [Album] = []
     @State private var sort: AlbumSort = .newest
@@ -57,9 +59,9 @@ struct AlbumListView: View {
                 }
             }
         }
-        .navigationTitle(genre ?? "Albums")
+        .navigationTitle(genre ?? decade.map { "\($0)s" } ?? "Albums")
         .toolbar {
-            if genre == nil {
+            if genre == nil, decade == nil {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Picker("Sort", selection: $sort) {
@@ -79,7 +81,7 @@ struct AlbumListView: View {
             if isLoadingPage, albums.isEmpty { ProgressView() }
         }
         .refreshable { await reload() }
-        .task(id: LoadKey(sort: sort, scope: scope.generation, genre: genre)) {
+        .task(id: LoadKey(sort: sort, scope: scope.generation, genre: genre, decade: decade)) {
             if !didApplyInitialSort {
                 sort = initialSort
                 didApplyInitialSort = true
@@ -92,6 +94,7 @@ struct AlbumListView: View {
         let sort: AlbumSort
         let scope: Int
         let genre: String?
+        let decade: Int?
     }
 
     private func reload() async {
@@ -114,7 +117,18 @@ struct AlbumListView: View {
             // Only the first page is cached: offline, page 0 is the whole useful answer,
             // and stitching later pages into one entry buys nothing for the complexity.
             let page: [Album]
-            if offset == 0, currentGenre == nil {
+            if let decade {
+                // The server filters on the *release* year while each row shows its
+                // *original* year, so a 1979 record reissued in 1995 belongs here and
+                // prints 1979. Not re-filtered locally, or those would vanish.
+                page = try await client.albums(
+                    fromYear: decade,
+                    toYear: decade + 9,
+                    size: pageSize,
+                    offset: offset,
+                    scope: currentScope
+                )
+            } else if offset == 0, currentGenre == nil {
                 appState.beginLoadPass()
                 let cached: [Album]? = await appState.cached(
                     CacheKey.albumList(currentSort.rawValue, currentScope.cacheKey)

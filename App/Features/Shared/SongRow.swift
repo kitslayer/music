@@ -13,6 +13,9 @@ struct SongRow: View {
     let song: Song
     var style: Style = .withArtwork
     var isCurrent = false
+    /// Replaces the duration when set. In a "least recently played" list, when a track
+    /// was last heard is the only figure worth the space.
+    var trailing: String?
 
     var body: some View {
         HStack(spacing: Metrics.itemSpacing) {
@@ -41,7 +44,12 @@ struct SongRow: View {
                     .foregroundStyle(Color.appTint)
             }
 
-            if let duration = song.duration {
+            if let trailing {
+                Text(trailing)
+                    .font(.footnote)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+            } else if let duration = song.duration {
                 Text(duration.asDuration)
                     .font(.footnote.monospacedDigit())
                     .foregroundStyle(.tertiary)

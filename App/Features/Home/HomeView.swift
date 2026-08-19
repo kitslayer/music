@@ -27,6 +27,7 @@ struct HomeView: View {
                         albumShelf("Recently Added", model.recentlyAdded, sort: .newest)
                         favoriteSongs
                         albumShelf("Most Played", model.mostPlayed, sort: .frequent)
+                        forgottenFavourites
                     }
                 }
                 .padding(.vertical, Metrics.itemSpacing)
@@ -66,6 +67,34 @@ struct HomeView: View {
             // by every pull-to-refresh.
             .task(id: scope.generation) {
                 await appState.mixes.load(appState: appState, scope: scope.scope)
+            }
+        }
+    }
+
+    /// The counterweight to every other shelf on this screen.
+    ///
+    /// Recently played, recently added and most played all show the same small corner of a
+    /// library where 95% of tracks have never been played once. This one shows what has
+    /// been starred and then left alone, which is the only shelf here that can send you
+    /// somewhere you have not already been.
+    @ViewBuilder
+    private var forgottenFavourites: some View {
+        if !model.forgotten.songs.isEmpty {
+            VStack(alignment: .leading, spacing: Metrics.headerToContent) {
+                ShelfHeader(title: "Forgotten Favourites", seeAll: .rediscover)
+
+                VStack(spacing: 0) {
+                    ForEach(Array(model.forgotten.songs.enumerated()), id: \.element.id) { index, song in
+                        PlayableSongRow(
+                            songs: model.forgotten.songs,
+                            index: index,
+                            source: "Forgotten Favourites",
+                            trailing: Rediscovery.lastPlayedText(model.forgotten.lastPlayed[song.id])
+                        )
+                        .padding(.horizontal, Metrics.gutter)
+                        .padding(.vertical, 6)
+                    }
+                }
             }
         }
     }
@@ -192,11 +221,12 @@ final class HomeModel {
     var recentlyAdded: [Album] = []
     var mostPlayed: [Album] = []
     var favoriteSongs: [Song] = []
+    var forgotten = Rediscovery.Forgotten()
     var hasLoaded = false
 
     var isEmpty: Bool {
         recentlyPlayed.isEmpty && recentlyAdded.isEmpty
-            && mostPlayed.isEmpty && favoriteSongs.isEmpty
+            && mostPlayed.isEmpty && favoriteSongs.isEmpty && forgotten.songs.isEmpty
     }
 
     /// Shelves load concurrently and a failing shelf is simply dropped: one dead
@@ -223,11 +253,15 @@ final class HomeModel {
         async let starred: Starred2? = appState.cached(CacheKey.starred(key)) {
             try await client.starred(scope: scope)
         }
+        // Not cached: it is derived from two calls, and offline the starred list it is
+        // built from is already served from the cache above.
+        async let neglected = Rediscovery.forgottenFavourites(appState: appState, scope: scope, limit: 3)
 
         recentlyPlayed = await played ?? []
         recentlyAdded = await added ?? []
         mostPlayed = await frequent ?? []
         favoriteSongs = Array((await starred?.songs ?? []).prefix(4))
+        forgotten = await neglected
         hasLoaded = true
     }
 }

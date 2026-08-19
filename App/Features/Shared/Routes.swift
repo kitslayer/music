@@ -23,6 +23,9 @@ enum Destination: Hashable {
     /// By id rather than by value: the mix itself lives in `DailyMixes`, which is
     /// rebuilt daily, and a route carrying 25 songs would pin a stale copy.
     case dailyMix(String)
+    case rediscover
+    /// The first year of the decade: 1990 means 1990-1999.
+    case decade(Int)
 }
 
 extension View {
@@ -70,6 +73,10 @@ extension View {
                 StatsView()
             case let .dailyMix(id):
                 DailyMixView(mixID: id)
+            case .rediscover:
+                RediscoverView()
+            case let .decade(start):
+                AlbumListView(decade: start)
             }
         }
     }

@@ -16,6 +16,8 @@ struct PlayableSongRow: View {
 
     var style: SongRow.Style = .withArtwork
     var showsNavigation = true
+    /// Passed straight through to `SongRow`, replacing the duration.
+    var trailing: String?
     /// When selecting, a tap ticks the row instead of starting playback.
     var selection: SongSelection?
 
@@ -38,7 +40,7 @@ struct PlayableSongRow: View {
             HStack(spacing: Metrics.itemSpacing) {
                 Image(systemName: isChosen ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(isChosen ? Color.appTint : .secondary)
-                SongRow(song: song, style: style, isCurrent: false)
+                SongRow(song: song, style: style, isCurrent: false, trailing: trailing)
             }
         }
         .buttonStyle(.plain)
@@ -51,7 +53,8 @@ struct PlayableSongRow: View {
             SongRow(
                 song: song,
                 style: style,
-                isCurrent: appState.player.currentSong?.id == song.id
+                isCurrent: appState.player.currentSong?.id == song.id,
+                trailing: trailing
             )
         }
         .buttonStyle(.plain)

@@ -91,6 +91,31 @@ struct SearchView: View {
                     }
                 }
                 .padding(.horizontal, Metrics.gutter)
+
+                Text("Browse by Decade")
+                    .font(.title3.weight(.semibold))
+                    .padding(.horizontal, Metrics.gutter)
+                    .padding(.top, Metrics.itemSpacing)
+
+                // Fixed rather than derived: the library runs 1963 to 2025, so every one
+                // of these has records behind it, and asking the server which decades
+                // exist would be seven requests to render a row of chips.
+                ScrollView(.horizontal) {
+                    HStack(spacing: Metrics.itemSpacing) {
+                        ForEach(Array(stride(from: 1960, through: 2020, by: 10)), id: \.self) { start in
+                            NavigationLink(value: Destination.decade(start)) {
+                                Text("\(String(start))s")
+                                    .font(.subheadline.weight(.medium))
+                                    .padding(.horizontal, 18)
+                                    .frame(minHeight: 44)
+                                    .background(.quaternary, in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, Metrics.gutter)
+                }
+                .scrollIndicators(.hidden)
             }
             .padding(.vertical, Metrics.itemSpacing)
         }
