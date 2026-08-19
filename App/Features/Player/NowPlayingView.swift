@@ -55,6 +55,16 @@ struct NowPlayingView: View {
                 .contentShape(Rectangle())
                 .gesture(dismissDrag)
 
+                // Artwork mode only, and deliberately its own row *outside*
+                // `PlayerSeekBar`: that view exists to contain the 4 Hz elapsed tick, and
+                // putting the stars inside it would repaint them four times a second.
+                // Rating happens while listening, which is why it belongs here and not
+                // only in a list's context menu.
+                if mode == .artwork {
+                    RatingStars(songID: song.id, serverRating: song.userRating)
+                        .padding(.top, 6)
+                }
+
                 PlayerSeekBar()
                 transport
                 volumeRow

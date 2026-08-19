@@ -22,6 +22,7 @@ struct StatsView: View {
     @Environment(DownloadCenter.self) private var downloads
 
     @State private var window: ListeningHistory.Window = .month
+    @State private var confirmsClearHistory = false
     @State private var scan: ScanStatus?
     @State private var starred: Starred2?
     @State private var mostPlayed: [Album] = []
@@ -73,6 +74,52 @@ struct StatsView: View {
                 Text("Recorded on this phone, from when the app was installed.")
             }
         }
+
+        if !history.plays.isEmpty {
+            Section {
+                // Export sits beside Clear on purpose: the log lives in Application
+                // Support and is excluded from backups, so without a way out, clearing it
+                // is unrecoverable. Offering both makes the destructive one safe to offer.
+                ShareLink(item: historyCSV) {
+                    Label("Export History", systemImage: "square.and.arrow.up")
+                }
+
+                Button("Clear Listening History", systemImage: "trash", role: .destructive) {
+                    confirmsClearHistory = true
+                }
+            } footer: {
+                Text("\(history.plays.count) plays recorded on this phone. Clearing does not touch the server's own play counts.")
+            }
+            .confirmationDialog(
+                "Delete \(history.plays.count) plays recorded on this phone?",
+                isPresented: $confirmsClearHistory,
+                titleVisibility: .visible
+            ) {
+                Button("Delete", role: .destructive) { history.clear() }
+            } message: {
+                Text("This only clears what this phone recorded. Play counts on the server are unaffected.")
+            }
+        }
+    }
+
+    /// One row per play, so a spreadsheet can do whatever this screen does not.
+    private var historyCSV: String {
+        let formatter = ISO8601DateFormatter()
+        func escaped(_ field: String) -> String {
+            "\"" + field.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+        }
+        let header = "played_at,title,artist,album,genre,seconds"
+        let rows = history.plays.map { play in
+            [
+                formatter.string(from: play.at),
+                escaped(play.title),
+                escaped(play.artist),
+                escaped(play.album),
+                escaped(play.genre ?? ""),
+                String(play.duration),
+            ].joined(separator: ",")
+        }
+        return ([header] + rows).joined(separator: "\n")
     }
 
     private var hours: String {
@@ -165,7 +212,9 @@ struct StatsView: View {
             } header: {
                 Text("Most Played Tracks")
             } footer: {
-                Text("Every device, all time — including the 7,966 plays imported from Plex.")
+                // No figure: the exact count cannot be had from any single call, and a
+                // hardcoded one goes stale the moment anything is played.
+                Text("Every device, all time — including the plays imported from Plex.")
             }
         }
 
