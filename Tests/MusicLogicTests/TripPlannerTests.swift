@@ -11,7 +11,7 @@ struct TripPlannerTests {
         var song = Song(id: id, title: title ?? "Track \(id)")
         song.artist = artist
         song.duration = minutes * 60
-        song.size = minutes * 60 * 1_000_000
+        song.size = Int64(minutes * 60 * 1_000_000)
         return song
     }
 

@@ -33,6 +33,7 @@ final class AppState {
     let playlistArtwork = PlaylistArtwork()
     let history = ListeningHistory()
     let mixes = DailyMixes()
+    let hermes = HermesAsk()
     let native = NavidromeClient()
     let downloads = DownloadCenter()
     let reachability = Reachability()
@@ -54,6 +55,7 @@ final class AppState {
         userState.configure(client: client, outbox: outbox)
         playlistStore.configure(client: client, appState: self)
         requests.configure(client: client)
+        hermes.configure(requests: requests)
         queueSync.configure(client: client)
         playlistSync.configure(
             client: client, downloads: downloads, reachability: reachability

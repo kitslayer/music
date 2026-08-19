@@ -142,6 +142,15 @@ struct ArtistDetailView: View {
                 isBusy: isGatheringDiscography
             )
             .padding(.horizontal, Metrics.gutter)
+
+            // Where a biography would go if the server had one. It does not: this
+            // server's `getArtistInfo2` returns no text at all and its image URLs 404.
+            HermesNoteSection(
+                subject: .artist(id: artist.id, name: artist.name),
+                isCompact: true
+            )
+            .padding(.horizontal, Metrics.gutter)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity)
         .padding(.top, Metrics.gutter)

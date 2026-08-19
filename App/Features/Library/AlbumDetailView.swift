@@ -141,6 +141,16 @@ struct AlbumDetailView: View {
                 }
             )
             .padding(.horizontal, Metrics.gutter)
+
+            HermesNoteSection(
+                subject: .album(
+                    id: album.id,
+                    name: album.name,
+                    artist: album.artist ?? detail?.artist
+                )
+            )
+            .padding(.horizontal, Metrics.gutter)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, Metrics.gutter)
