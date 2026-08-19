@@ -61,6 +61,9 @@ struct SearchView: View {
                     Text(option.shortName).tag(option)
                 }
             }
+            .onSubmit(of: .search) {
+                appState.recentSearches.record(query)
+            }
             .scrollDismissesKeyboard(.immediately)
             .task(id: SearchKey(query: query, scope: scope.generation)) {
                 await search()
@@ -77,6 +80,37 @@ struct SearchView: View {
     private var idleState: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Metrics.headerToContent) {
+                if !appState.recentSearches.terms.isEmpty {
+                    HStack {
+                        Text("Recent")
+                            .font(.title3.weight(.semibold))
+                        Spacer()
+                        Button("Clear") { appState.recentSearches.clear() }
+                            .font(.footnote)
+                    }
+                    .padding(.horizontal, Metrics.gutter)
+
+                    VStack(spacing: 0) {
+                        ForEach(appState.recentSearches.terms, id: \.self) { term in
+                            Button {
+                                query = term
+                            } label: {
+                                HStack(spacing: Metrics.itemSpacing) {
+                                    Image(systemName: "clock.arrow.circlepath")
+                                        .foregroundStyle(.tertiary)
+                                    Text(term)
+                                        .lineLimit(1)
+                                    Spacer()
+                                }
+                                .contentShape(Rectangle())
+                                .padding(.vertical, 10)
+                                .padding(.horizontal, Metrics.gutter)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
                 Text("Browse Genres")
                     .font(.title3.weight(.semibold))
                     .padding(.horizontal, Metrics.gutter)
@@ -195,6 +229,11 @@ struct SearchView: View {
             }
         }
         .listStyle(.plain)
+        // Tapping a result is the strongest signal the search was the right one, and it
+        // costs nothing to notice. Simultaneous, so it never swallows the row's own tap.
+        .simultaneousGesture(
+            TapGesture().onEnded { appState.recentSearches.record(query) }
+        )
         .overlay {
             if isSearching, results == nil { ProgressView() }
         }

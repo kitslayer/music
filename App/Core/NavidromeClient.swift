@@ -131,6 +131,64 @@ actor NavidromeClient {
             .filter { ($0.playCount ?? 0) > 0 }
     }
 
+    // MARK: - Playlist order
+
+    /// Moves a track within a playlist.
+    ///
+    /// Subsonic cannot do this at all: `updatePlaylist` only appends
+    /// (`songIdToAdd`) and removes by index, so the only way to reorder there is to
+    /// empty the playlist and re-add it — and if the second call fails the playlist is
+    /// gone. Navidrome's own API has a real move, which is why this is worth a second
+    /// client.
+    ///
+    /// Positions are 1-based and are renumbered by the server after every move, so the
+    /// caller must re-read rather than assume. `insertBefore` is the position of the track
+    /// this one should land in front of; one past the end appends. Both are sent as
+    /// **strings** — the endpoint rejects a JSON number outright, which is the kind of
+    /// thing only a probe finds. Verified on a throwaway playlist, moves up, down and to
+    /// the end.
+    func movePlaylistTrack(
+        playlistID: String,
+        from position: Int,
+        insertBefore target: Int
+    ) async throws {
+        guard let credentials else { throw SubsonicClient.ClientError.notConfigured }
+
+        for attempt in 0..<2 {
+            let bearer: String
+            if let existing = token {
+                bearer = existing
+            } else {
+                bearer = try await login()
+            }
+
+            let url = credentials.baseURL
+                .appendingPathComponent("api/playlist/\(playlistID)/tracks/\(position)")
+
+            var request = URLRequest(url: url)
+            request.httpMethod = "PUT"
+            request.setValue("Bearer \(bearer)", forHTTPHeaderField: "x-nd-authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try? JSONSerialization.data(
+                withJSONObject: ["insert_before": String(target)]
+            )
+
+            let (_, response) = try await session.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+
+            if status == 401, attempt == 0 {
+                token = nil
+                continue
+            }
+            guard (200...299).contains(status) else {
+                throw SubsonicClient.ClientError.server("Navidrome replied \(status).")
+            }
+            return
+        }
+
+        throw SubsonicClient.ClientError.server("Navidrome would not authenticate.")
+    }
+
     // MARK: - Plumbing
 
     private func login() async throws -> String {

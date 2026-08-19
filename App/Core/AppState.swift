@@ -34,6 +34,7 @@ final class AppState {
     let history = ListeningHistory()
     let mixes = DailyMixes()
     let hermes = HermesAsk()
+    let recentSearches = RecentSearches()
     let native = NavidromeClient()
     let downloads = DownloadCenter()
     let reachability = Reachability()

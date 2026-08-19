@@ -139,6 +139,36 @@ struct PlaylistDetailView: View {
     @State private var selection = SongSelection()
     @State private var isPickingPhoto = false
     @State private var pickedItem: PhotosPickerItem?
+    @State private var isReordering = false
+
+    /// Reordering goes through Navidrome's own API — Subsonic has no move at all, only
+    /// append and remove-by-index, so the alternative would be emptying the playlist and
+    /// re-adding it, which destroys it if the second call fails.
+    ///
+    /// The list is reordered locally first and re-read afterwards: the server renumbers
+    /// positions on every move, so the local copy is only a guess until it confirms.
+    private func move(from offsets: IndexSet, to destination: Int) {
+        guard let source = offsets.first, var detail else { return }
+
+        detail.entry?.move(fromOffsets: offsets, toOffset: destination)
+        self.detail = detail
+
+        Task {
+            do {
+                // Both ends are 1-based on the server, and `destination` is already an
+                // index into the list *before* the row was lifted out, which is exactly
+                // what `insert_before` means.
+                try await appState.native.movePlaylistTrack(
+                    playlistID: playlist.id,
+                    from: source + 1,
+                    insertBefore: destination + 1
+                )
+            } catch {
+                await Diagnostics.shared.record("playlist", "reorder failed: \(error)")
+            }
+            await load()
+        }
+    }
 
     var body: some View {
         List {
@@ -170,14 +200,22 @@ struct PlaylistDetailView: View {
                         }
                     }
             }
+            .onMove { offsets, destination in
+                move(from: offsets, to: destination)
+            }
         }
         .listStyle(.plain)
+        .environment(\.editMode, .constant(isReordering ? .active : .inactive))
         .collapsingTitle(playlist.name)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                CollectionDownloadButton(
-                    songs: songs, groupID: playlist.id, groupName: playlist.name
-                )
+                if isReordering {
+                    Button("Done") { isReordering = false }
+                } else {
+                    CollectionDownloadButton(
+                        songs: songs, groupID: playlist.id, groupName: playlist.name
+                    )
+                }
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
@@ -186,6 +224,9 @@ struct PlaylistDetailView: View {
                     }
                     Button("Select Tracks", systemImage: "checkmark.circle") {
                         selection.begin()
+                    }
+                    Button("Reorder", systemImage: "arrow.up.arrow.down") {
+                        isReordering = true
                     }
                     Divider()
                     Button("Choose Photo…", systemImage: "photo") {
