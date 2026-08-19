@@ -139,7 +139,8 @@ struct HermesClient: Sendable {
             guard let data = try await result(for: requestID) else { return .pending }
 
             let decoder = JSONDecoder()
-            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            // No `.convertFromSnakeCase`: the payload types spell their wire keys out, and
+            // the strategy would rewrite the incoming key before the lookup and miss them.
             decoder.dateDecodingStrategy = .custom { decoder in
                 let text = try decoder.singleValueContainer().decode(String.self)
                 return ServerDate.parse(text) ?? .now

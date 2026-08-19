@@ -10,6 +10,13 @@ import Foundation
 /// it tried and could not, and `message` says why. **The absence of a file is neither** —
 /// it means the run is still going, which is why `HermesOutcome` has a `pending` case
 /// rather than treating a missing answer as failure.
+///
+/// Wire keys are written out in full rather than left to
+/// `JSONDecoder.keyDecodingStrategy = .convertFromSnakeCase`. That strategy turns
+/// `song_id` into `songId`, which does **not** match a property spelled `songID` — the
+/// house spelling everywhere else in this app — so the field decodes as `nil` and nothing
+/// warns you. Spelling the keys out also means the prompt that tells the agent what to
+/// emit can be diffed against these declarations line for line.
 enum HermesOutcome<Value: Sendable>: Sendable {
     case pending
     case ok(Value)
@@ -39,6 +46,13 @@ struct VibeResult: HermesPayload {
     var trackCount: Int?
     /// A sentence on what it went for, also mirrored into the playlist's comment.
     var note: String?
+
+    enum CodingKeys: String, CodingKey {
+        case status, message, note
+        case playlistID = "playlist_id"
+        case playlistName = "playlist_name"
+        case trackCount = "track_count"
+    }
 }
 
 /// Feature D2 — lyric search hits.
@@ -64,6 +78,12 @@ struct LyricMatch: Codable, Hashable, Sendable, Identifiable {
     var atMs: Int?
 
     var id: String { songID }
+
+    enum CodingKeys: String, CodingKey {
+        case title, artist, album, line
+        case songID = "song_id"
+        case atMs = "at_ms"
+    }
 }
 
 /// Feature D1 — a written note about a record or an artist.
@@ -81,6 +101,11 @@ struct HermesNote: Codable, Sendable, HermesPayload {
             .components(separatedBy: "\n\n")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case status, message, kind, name, text, sources
+        case writtenAt = "written_at"
     }
 }
 
@@ -129,6 +154,15 @@ struct HealthReport: HermesPayload, Codable {
     var missingYear: Int?
     var missingArtwork: Int?
 
+    enum CodingKeys: String, CodingKey {
+        case status, message, undecodable
+        case scannedAt = "scanned_at"
+        case totalTracks = "total_tracks"
+        case duplicateGroups = "duplicate_groups"
+        case missingYear = "missing_year"
+        case missingArtwork = "missing_artwork"
+    }
+
     struct DuplicateGroup: Codable, Hashable, Sendable, Identifiable {
         var title: String
         var artist: String?
@@ -144,6 +178,12 @@ struct HealthReport: HermesPayload, Codable {
         var suffix: String?
         var sizeBytes: Int64?
         var id: String { songID }
+
+        enum CodingKeys: String, CodingKey {
+            case path, library, suffix
+            case songID = "song_id"
+            case sizeBytes = "size_bytes"
+        }
     }
 }
 

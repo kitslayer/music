@@ -9,9 +9,9 @@ import Testing
 /// discover on the phone.
 struct HermesResultsTests {
     private func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        return try decoder.decode(type, from: Data(json.utf8))
+        // Deliberately a bare decoder, matching `HermesClient`: the types carry their own
+        // keys, so this pins the literal wire contract the agent's prompt has to produce.
+        return try JSONDecoder().decode(type, from: Data(json.utf8))
     }
 
     @Test func vibeResultDecodesSnakeCase() throws {
