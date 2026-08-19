@@ -21,6 +21,7 @@ let package = Package(
                 "PlaybackQueue.swift",
                 "PlayTracker.swift",
                 "DownloadCatalog.swift",
+                "HermesResults.swift",
             ]
         ),
         .testTarget(

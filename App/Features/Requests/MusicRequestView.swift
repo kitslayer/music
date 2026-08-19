@@ -193,7 +193,12 @@ struct MusicRequestSettingsView: View {
 
     @State private var address = ""
     @State private var secret = ""
+    /// Where answers are read from. Not a secret — it is a LAN address serving read-only
+    /// files — but kept out of the binary so a moved port needs no rebuild.
+    @State private var resultsAddress = ""
     @State private var problem: String?
+    @State private var isTesting = false
+    @State private var testResult: String?
 
     var body: some View {
         Form {
@@ -206,6 +211,28 @@ struct MusicRequestSettingsView: View {
                 SecureField("HMAC secret", text: $secret)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+
+                TextField("http://192.168.1.148:8645", text: $resultsAddress)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+
+                Button {
+                    test()
+                } label: {
+                    HStack {
+                        Text("Test Results Address")
+                        Spacer()
+                        if isTesting {
+                            ProgressView()
+                        } else if let testResult {
+                            Text(testResult)
+                                .font(.footnote)
+                                .foregroundStyle(testResult == "OK" ? .green : .red)
+                        }
+                    }
+                }
+                .disabled(resultsAddress.isEmpty || isTesting)
             } header: {
                 Text("Hermes Webhook")
             } footer: {
@@ -215,7 +242,8 @@ struct MusicRequestSettingsView: View {
                     Text("""
                     The secret is kept in the Keychain on this phone. Requests are signed \
                     with it, and the gateway rejects anything unsigned or older than five \
-                    minutes.
+                    minutes. The results address is where Hermes's answers are read from — \
+                    the webhook itself is one-way.
                     """)
                 }
             }
@@ -237,6 +265,7 @@ struct MusicRequestSettingsView: View {
         .onAppear {
             if let configuration = requests.configuration {
                 address = configuration.endpoint.absoluteString
+                resultsAddress = configuration.resultsBase?.absoluteString ?? ""
                 // The secret is never shown back: it is write-only from here, which is
                 // what a secret field should be.
                 secret = ""
@@ -249,7 +278,38 @@ struct MusicRequestSettingsView: View {
             problem = "That does not look like a URL."
             return
         }
+
+        var results: URL?
+        if !resultsAddress.isEmpty {
+            guard let parsed = URL(string: resultsAddress), parsed.scheme != nil, parsed.host != nil
+            else {
+                problem = "The results address does not look like a URL."
+                return
+            }
+            results = parsed
+        }
+
         problem = nil
-        requests.configure(endpoint: url, secret: secret)
+        requests.configure(endpoint: url, secret: secret, resultsBase: results)
+    }
+
+    /// Proves the read leg on its own, before any feature depends on it. The mailbox
+    /// serves a fixed `ping.json` for exactly this.
+    private func test() {
+        guard let parsed = URL(string: resultsAddress), parsed.host != nil else {
+            testResult = "Bad URL"
+            return
+        }
+        isTesting = true
+        testResult = nil
+        Task {
+            let client = HermesClient(
+                configuration: .init(
+                    endpoint: parsed, secret: secret, resultsBase: parsed
+                )
+            )
+            testResult = await client.ping() ? "OK" : "No answer"
+            isTesting = false
+        }
     }
 }

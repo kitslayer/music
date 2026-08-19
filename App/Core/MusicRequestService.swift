@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 import Observation
 
@@ -15,11 +14,9 @@ import Observation
 @MainActor
 @Observable
 final class MusicRequestService {
-    struct Configuration: Codable, Sendable, Equatable {
-        /// Full route URL, e.g. `http://192.168.1.148:8644/webhooks/music-request`.
-        var endpoint: URL
-        var secret: String
-    }
+    /// The configuration now lives on `HermesClient`, which owns the signing. Aliased so
+    /// the Keychain helpers, and every item already written by them, keep working.
+    typealias Configuration = HermesClient.Configuration
 
     /// One sent request, plus what has happened in the library since.
     ///
@@ -38,6 +35,9 @@ final class MusicRequestService {
         var baseline: Baseline?
         var arrival: Arrival?
         var gaveUp: Bool?
+        /// Correlation id for the results mailbox. Optional: entries written before the
+        /// mailbox existed have none, and a default would stop them decoding at all.
+        var requestID: UUID?
 
         /// Still worth checking on: accepted, nothing found yet, not timed out.
         var isWatching: Bool {
@@ -86,8 +86,10 @@ final class MusicRequestService {
         }
     }
 
-    func configure(endpoint: URL, secret: String) {
-        let configuration = Configuration(endpoint: endpoint, secret: secret)
+    func configure(endpoint: URL, secret: String, resultsBase: URL? = nil) {
+        let configuration = Configuration(
+            endpoint: endpoint, secret: secret, resultsBase: resultsBase
+        )
         Keychain.saveMusicRequestConfiguration(configuration)
         self.configuration = configuration
         lastError = nil
@@ -110,55 +112,50 @@ final class MusicRequestService {
         lastError = nil
         defer { isSending = false }
 
-        let payload: [String: String] = [
-            "request": trimmed,
-            "source": "Music iOS",
-        ]
-        guard let body = try? JSONSerialization.data(withJSONObject: payload) else {
-            lastError = "Could not encode the request"
-            return false
-        }
-
-        let timestamp = String(Int(Date.now.timeIntervalSince1970))
-        let signed = Data(timestamp.utf8) + Data(".".utf8) + body
-        let signature = HMAC<SHA256>
-            .authenticationCode(for: signed, using: SymmetricKey(data: Data(configuration.secret.utf8)))
-            .map { String(format: "%02x", $0) }
-            .joined()
-
-        var request = URLRequest(url: configuration.endpoint)
-        request.httpMethod = "POST"
-        request.httpBody = body
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(timestamp, forHTTPHeaderField: "X-Webhook-Timestamp")
-        request.setValue(signature, forHTTPHeaderField: "X-Webhook-Signature-V2")
-        // The agent takes a while to answer, but acceptance is immediate; a long
-        // timeout here would only hide a misconfigured endpoint.
-        request.timeoutInterval = 15
-
         // Taken *before* the request is sent, so anything that shows up afterwards is
         // unambiguously new. Without it, "do I have Hybrid Theory" would report itself
         // satisfied by the tracks that were already there.
         let baseline = await snapshot(for: trimmed)
+        let requestID = UUID()
 
+        let client = HermesClient(configuration: configuration)
         do {
-            let (_, response) = try await URLSession.shared.data(for: request)
-            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            let accepted = (200...299).contains(status)
+            let acceptance = try await client.send(
+                route: "music-request",
+                requestID: requestID,
+                fields: ["request": trimmed]
+            )
 
-            if !accepted {
+            switch acceptance {
+            case .accepted:
+                record(Entry(
+                    text: trimmed,
+                    sentAt: .now,
+                    wasAccepted: true,
+                    baseline: baseline,
+                    requestID: requestID
+                ))
+                return true
+
+            case .duplicate:
+                // The gateway answers 200 for this and does not run the agent, so it must
+                // not be counted as sent.
+                lastError = "That request was already sent moments ago."
+                return false
+
+            case let .rejected(status):
                 lastError = status == 401
                     ? "The gateway rejected the signature — check the secret."
                     : "The gateway replied \(status)."
+                record(Entry(
+                    text: trimmed,
+                    sentAt: .now,
+                    wasAccepted: false,
+                    baseline: baseline,
+                    requestID: requestID
+                ))
+                return false
             }
-
-            record(Entry(
-                text: trimmed,
-                sentAt: .now,
-                wasAccepted: accepted,
-                baseline: baseline
-            ))
-            return accepted
         } catch {
             lastError = error.localizedDescription
             record(Entry(text: trimmed, sentAt: .now, wasAccepted: false, baseline: baseline))
