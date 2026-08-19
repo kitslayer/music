@@ -60,8 +60,11 @@ struct PlaylistListView: View {
         .navigationTitle("Playlists")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    isCreating = true
+                Menu {
+                    Button("New Playlist", systemImage: "plus") { isCreating = true }
+                    NavigationLink(value: Destination.vibePlaylist) {
+                        Label("Ask Hermes for One", systemImage: "sparkles")
+                    }
                 } label: {
                     Image(systemName: "plus")
                 }

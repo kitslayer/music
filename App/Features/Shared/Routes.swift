@@ -27,6 +27,9 @@ enum Destination: Hashable {
     /// The first year of the decade: 1990 means 1990-1999.
     case decade(Int)
     case tripMode
+    case lyricSearch(String)
+    case vibePlaylist
+    case libraryHealth
 }
 
 extension View {
@@ -80,6 +83,12 @@ extension View {
                 AlbumListView(decade: start)
             case .tripMode:
                 TripModeView()
+            case let .lyricSearch(prefill):
+                LyricSearchView(initialQuery: prefill)
+            case .vibePlaylist:
+                VibePlaylistView()
+            case .libraryHealth:
+                LibraryHealthView()
             }
         }
     }

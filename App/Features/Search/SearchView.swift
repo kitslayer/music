@@ -31,6 +31,12 @@ struct SearchView: View {
                             Label("Ask Hermes to find it", systemImage: "arrow.down.heart")
                         }
                         .buttonStyle(.borderedProminent)
+
+                        // Metadata search has just failed, which is exactly when a
+                        // half-remembered lyric is the only thing left to go on.
+                        NavigationLink(value: Destination.lyricSearch(query)) {
+                            Label("Search lyrics instead", systemImage: "text.magnifyingglass")
+                        }
                     }
                 } else {
                     resultsList
@@ -176,6 +182,15 @@ struct SearchView: View {
                     ForEach(Array(visible.enumerated()), id: \.element.id) { index, _ in
                         PlayableSongRow(songs: visible, index: index, source: "Search")
                     }
+                }
+            }
+
+            // A trailing row rather than a second search field: metadata results and
+            // lyric results answer different questions, and the second one costs an
+            // agent run, so it stays opt-in.
+            Section {
+                NavigationLink(value: Destination.lyricSearch(query)) {
+                    Label("Search lyrics for “\(query)”", systemImage: "text.magnifyingglass")
                 }
             }
         }

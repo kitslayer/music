@@ -36,8 +36,11 @@ struct LibraryHubView: View {
                             : "\(downloads.catalog.entries.count)"
                     )
                     row("Rediscover", "clock.arrow.circlepath", .rediscover)
+                    row("Make a Playlist", "sparkles", .vibePlaylist)
+                    row("Lyric Search", "text.magnifyingglass", .lyricSearch(""))
                     row("Trip Mode", "airplane", .tripMode)
                     row("Stats", "chart.bar.xaxis", .stats)
+                    row("Library Health", "stethoscope", .libraryHealth)
                     row("Request Music", "arrow.down.heart", .requestMusic(""))
                     row("Settings", "gearshape", .settings)
                 }

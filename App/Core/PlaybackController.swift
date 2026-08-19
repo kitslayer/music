@@ -184,7 +184,16 @@ final class PlaybackController {
 
     // MARK: - Starting playback
 
-    func play(songs: [Song], startingAt index: Int, source: String, shuffled: Bool = false) {
+    /// `startAt` is seconds into the first track — for "play from this lyric", and for
+    /// resuming a long track where it was left. Passed into the rebuild rather than
+    /// seeking afterwards, which would race the output coming up.
+    func play(
+        songs: [Song],
+        startingAt index: Int,
+        source: String,
+        shuffled: Bool = false,
+        startAt seconds: Double = 0
+    ) {
         guard !songs.isEmpty else { return }
 
         queue = .make(
@@ -195,7 +204,7 @@ final class PlaybackController {
             repeatMode: queue.repeatMode
         )
 
-        rebuildOutput(startPlaying: true, seekTo: 0)
+        rebuildOutput(startPlaying: true, seekTo: seconds)
     }
 
     func playNext(_ songs: [Song]) {
