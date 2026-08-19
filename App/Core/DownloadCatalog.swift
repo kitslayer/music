@@ -108,6 +108,26 @@ struct DownloadCatalog: Codable, Sendable {
     var totalBytes: Int64 {
         entries.values.reduce(0) { $0 + $1.byteCount }
     }
+
+    /// Bytes per second of audio, measured from what is actually on this phone.
+    ///
+    /// Projections used to assume 1 MB/s, which is right for 16-bit 44.1 kHz FLAC and
+    /// wrong for everything else in a library that also holds 24/96 and MP3. Measuring
+    /// costs nothing — the sizes and durations are already here — and it self-corrects as
+    /// the mix of what is downloaded changes. Transcoded copies are excluded so a few
+    /// small files cannot drag the estimate for a lossless download down with them.
+    var measuredBytesPerSecond: Double {
+        var bytes = 0.0
+        var seconds = 0.0
+        for entry in entries.values where entry.quality == .original {
+            guard let duration = entry.song.duration, duration > 0, entry.byteCount > 0 else { continue }
+            bytes += Double(entry.byteCount)
+            seconds += Double(duration)
+        }
+        // Nothing downloaded yet: fall back to the old figure rather than to zero.
+        guard seconds > 60 else { return 1_000_000 }
+        return bytes / seconds
+    }
 }
 
 /// Owns the catalog file. An actor because the download delegate, the UI and the

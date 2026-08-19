@@ -26,6 +26,7 @@ enum Destination: Hashable {
     case rediscover
     /// The first year of the decade: 1990 means 1990-1999.
     case decade(Int)
+    case tripMode
 }
 
 extension View {
@@ -77,6 +78,8 @@ extension View {
                 RediscoverView()
             case let .decade(start):
                 AlbumListView(decade: start)
+            case .tripMode:
+                TripModeView()
             }
         }
     }

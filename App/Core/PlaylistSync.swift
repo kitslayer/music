@@ -141,12 +141,13 @@ final class PlaylistSync {
 
     /// Rough projection for the settings screen, so 20 GB is never a surprise.
     ///
-    /// Uses the playlists' own reported durations rather than fetching every track:
-    /// ~1 MB per second is a fair figure for the FLAC that dominates this library.
-    func estimatedSize(for playlists: [Playlist]) -> Int64 {
+    /// Uses the playlists' own reported durations rather than fetching every track, and
+    /// the rate measured from the files already on the phone rather than the 1 MB/s this
+    /// used to assume — that figure is only correct for 16-bit 44.1 kHz FLAC.
+    func estimatedSize(for playlists: [Playlist], bytesPerSecond: Double = 1_000_000) -> Int64 {
         let seconds = playlists
             .filter { !excludedIDs.contains($0.id) }
             .reduce(0) { $0 + ($1.duration ?? 0) }
-        return Int64(seconds) * 1_000_000
+        return Int64(Double(seconds) * bytesPerSecond)
     }
 }

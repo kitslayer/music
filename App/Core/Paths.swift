@@ -57,4 +57,14 @@ enum Paths {
     static func lyricsFile(songID: String) -> URL {
         lyrics.appendingPathComponent("\(songID).json")
     }
+
+    /// Room for something the user explicitly asked for.
+    ///
+    /// `volumeAvailableCapacityForImportantUsage`, not the raw free bytes: it is the
+    /// figure that accounts for caches iOS will purge on demand, so it is what a download
+    /// can actually use rather than what `df` would say.
+    static var availableBytes: Int64 {
+        let values = try? root.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+        return values?.volumeAvailableCapacityForImportantUsage ?? 0
+    }
 }

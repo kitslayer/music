@@ -23,6 +23,7 @@ let package = Package(
                 "DownloadCatalog.swift",
                 "HermesResults.swift",
                 "MixEngine.swift",
+                "TripPlanner.swift",
             ]
         ),
         .testTarget(
