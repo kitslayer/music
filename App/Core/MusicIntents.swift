@@ -149,6 +149,46 @@ struct ResumeMusicIntent: AppIntent {
     }
 }
 
+/// Asks Hermes for a playlist without opening a screen first.
+///
+/// The one intent here that does not start playback: it hands a sentence to the agent and
+/// comes back. Deliberately no waiting — the build takes minutes, so the dialog says it is
+/// under way and the app shows it when it lands.
+struct MakeVibePlaylistIntent: AppIntent {
+    static let title: LocalizedStringResource = "Make a Playlist"
+    static let description = IntentDescription("Asks Hermes to build a playlist from a description.")
+    static let openAppWhenRun = true
+
+    @Parameter(title: "Vibe")
+    var vibe: String
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Make a playlist for \(\.$vibe)")
+    }
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        guard let appState = await MusicIntentBridge.state() else {
+            return .result(dialog: "Music isn't signed in yet.")
+        }
+        guard appState.hermes.isAvailable else {
+            return .result(dialog: "Set the Hermes results address in Music's settings first.")
+        }
+
+        await appState.playlistStore.loadIfNeeded()
+        let name = VibeTitle.unique(
+            VibeTitle.sanitised(vibe),
+            existing: appState.playlistStore.playlists.map(\.name),
+            requestID: UUID()
+        )
+
+        let sent = await appState.hermes.startVibe(name: name, vibe: vibe)
+        return .result(dialog: sent
+            ? "Hermes is building \(name). It'll appear in your playlists shortly."
+            : "I couldn't reach Hermes.")
+    }
+}
+
 /// The phrases Siri accepts without opening Shortcuts first.
 ///
 /// `.applicationName` is **required** in every phrase — Apple will not register a shortcut
@@ -190,6 +230,15 @@ struct MusicShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "Play Favourites",
             systemImageName: "star.fill"
+        )
+        AppShortcut(
+            intent: MakeVibePlaylistIntent(),
+            phrases: [
+                "Make a playlist in \(.applicationName)",
+                "Build me a playlist in \(.applicationName)",
+            ],
+            shortTitle: "Make a Playlist",
+            systemImageName: "sparkles"
         )
         AppShortcut(
             intent: PlayPlaylistIntent(),
