@@ -122,6 +122,7 @@ struct DiagnosticsView: View {
         case .star: return "Favourites added"
         case .unstar: return "Favourites removed"
         case .rating: return "Ratings"
+        case .bookmark: return "Resume positions"
         }
     }
 
