@@ -20,6 +20,9 @@ enum Destination: Hashable {
     case offlineSettings
     case diagnostics
     case stats
+    /// By id rather than by value: the mix itself lives in `DailyMixes`, which is
+    /// rebuilt daily, and a route carrying 25 songs would pin a stale copy.
+    case dailyMix(String)
 }
 
 extension View {
@@ -65,6 +68,8 @@ extension View {
                 DiagnosticsView()
             case .stats:
                 StatsView()
+            case let .dailyMix(id):
+                DailyMixView(mixID: id)
             }
         }
     }

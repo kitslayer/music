@@ -22,6 +22,7 @@ let package = Package(
                 "PlayTracker.swift",
                 "DownloadCatalog.swift",
                 "HermesResults.swift",
+                "MixEngine.swift",
             ]
         ),
         .testTarget(

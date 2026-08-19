@@ -22,6 +22,7 @@ struct HomeView: View {
                         }
                         .padding(.top, 60)
                     } else {
+                        mixShelf
                         albumShelf("Recently Played", model.recentlyPlayed, sort: .recent)
                         albumShelf("Recently Added", model.recentlyAdded, sort: .newest)
                         favoriteSongs
@@ -59,6 +60,49 @@ struct HomeView: View {
             }
             .task(id: scope.generation) {
                 await model.load(appState: appState, scope: scope.scope)
+            }
+            // Separate from the shelves above: this one is built from a dozen requests
+            // and only once a day, so it must not hold up the rest of Home or be redone
+            // by every pull-to-refresh.
+            .task(id: scope.generation) {
+                await appState.mixes.load(appState: appState, scope: scope.scope)
+            }
+        }
+    }
+
+    /// The one shelf here that could not exist without the app's own play log: the
+    /// server records how many times a track was played, never when.
+    @ViewBuilder
+    private var mixShelf: some View {
+        if !appState.mixes.mixes.isEmpty {
+            VStack(alignment: .leading, spacing: Metrics.headerToContent) {
+                ShelfHeader(title: "Made for You")
+
+                ScrollView(.horizontal) {
+                    LazyHStack(spacing: Metrics.itemSpacing) {
+                        ForEach(appState.mixes.mixes) { mix in
+                            NavigationLink(value: Destination.dailyMix(mix.id)) {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    MixTile(covers: mix.covers, size: .card)
+                                        .frame(width: Metrics.cardWidth, height: Metrics.cardWidth)
+                                    Text(mix.title)
+                                        .font(.subheadline.weight(.semibold))
+                                        .lineLimit(1)
+                                    Text(mix.subtitle)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                                .frame(width: Metrics.cardWidth, alignment: .leading)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .scrollTargetLayout()
+                }
+                .scrollTargetBehavior(.viewAligned)
+                .contentMargins(.horizontal, Metrics.gutter, for: .scrollContent)
+                .scrollIndicators(.hidden)
             }
         }
     }

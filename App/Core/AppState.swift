@@ -32,6 +32,7 @@ final class AppState {
     let cache = LibraryCache()
     let playlistArtwork = PlaylistArtwork()
     let history = ListeningHistory()
+    let mixes = DailyMixes()
     let native = NavidromeClient()
     let downloads = DownloadCenter()
     let reachability = Reachability()
