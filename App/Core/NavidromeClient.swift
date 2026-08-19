@@ -32,6 +32,22 @@ actor NavidromeClient {
         var duration: Double?
     }
 
+    /// One window onto a native-API collection, and how many rows exist behind it.
+    struct Page<Element: Sendable>: Sendable {
+        var items: [Element]
+        /// From `X-Total-Count`, which the native API sends on every list response.
+        /// Subsonic sends nothing of the kind — there the only way to learn a count is to
+        /// page until it runs dry — so anything that wants to say "42 of 2,227", or to
+        /// walk a collection a chunk at a time and know when to stop, comes through here.
+        var total: Int
+    }
+
+    /// The window to ask for when walking a whole collection. The server honours whatever
+    /// `_end` it is given — verified at 6,000 rows in a single response, with no cap and
+    /// no `Content-Range` — so this is picked to keep one response to a few megabytes,
+    /// not to satisfy a limit.
+    static let pageSize = 1_000
+
     private var credentials: SubsonicClient.Credentials?
     private var token: String?
     private let session: URLSession
@@ -62,29 +78,56 @@ actor NavidromeClient {
         token = nil
     }
 
-    /// Songs sorted by the field named, newest first. `playDate` gives recently played;
-    /// `playCount` gives most played.
-    func songs(sortedBy field: String, limit: Int = 25) async throws -> [Song] {
-        try await request(
-            path: "api/song",
-            query: [
-                "_sort": field,
-                "_order": "DESC",
-                "_start": "0",
-                "_end": String(limit),
-            ]
+    /// Songs, sorted and filtered by the native API's own query language.
+    ///
+    /// `filters` goes straight through as query items: `["starred": "true"]`,
+    /// `["album_id": id]`. That is the whole reason this client exists — Subsonic can
+    /// neither sort songs by play date nor filter to favourites-and-sort-by-something.
+    func songs(
+        matching filters: [String: String] = [:],
+        sortedBy field: String,
+        ascending: Bool = false,
+        start: Int = 0,
+        limit: Int = 25
+    ) async throws -> Page<Song> {
+        var query = filters
+        query["_sort"] = field
+        query["_order"] = ascending ? "ASC" : "DESC"
+        query["_start"] = String(start)
+        query["_end"] = String(start + limit)
+
+        let (items, response): ([Song], HTTPURLResponse) = try await request(
+            path: "api/song", query: query
         )
+        return Page(items: items, total: Self.total(from: response) ?? items.count)
+    }
+
+    /// Starred tracks, least recently played first — "you loved this and have not heard it
+    /// in a year", which is not answerable any other way: `getStarred2` returns favourites
+    /// in no useful order and carries no play date at all.
+    ///
+    /// Verified against this server: `starred=true` does combine with the `playDate` sort.
+    /// All 66 favourites here have been played at least once, so where a never-played
+    /// favourite lands in an ascending sort is untested — treat a nil `playDate` as
+    /// "forgotten", wherever it turns up.
+    func forgottenFavourites(limit: Int = 50) async throws -> [Song] {
+        try await songs(
+            matching: ["starred": "true"],
+            sortedBy: "playDate",
+            ascending: true,
+            limit: limit
+        ).items
     }
 
     /// Only tracks that have actually been played; the API happily returns never-played
     /// ones otherwise, which makes a "recently played" list mostly noise.
     func recentlyPlayed(limit: Int = 25) async throws -> [Song] {
-        try await songs(sortedBy: "playDate", limit: limit)
+        try await songs(sortedBy: "playDate", limit: limit).items
             .filter { $0.playDate != nil && ($0.playCount ?? 0) > 0 }
     }
 
     func mostPlayed(limit: Int = 25) async throws -> [Song] {
-        try await songs(sortedBy: "playCount", limit: limit)
+        try await songs(sortedBy: "playCount", limit: limit).items
             .filter { ($0.playCount ?? 0) > 0 }
     }
 
@@ -115,7 +158,19 @@ actor NavidromeClient {
         return token
     }
 
+    private static func total(from response: HTTPURLResponse) -> Int? {
+        response.value(forHTTPHeaderField: "X-Total-Count").flatMap(Int.init)
+    }
+
     private func request<T: Decodable>(path: String, query: [String: String]) async throws -> T {
+        let (decoded, _): (T, HTTPURLResponse) = try await request(path: path, query: query)
+        return decoded
+    }
+
+    private func request<T: Decodable>(
+        path: String,
+        query: [String: String]
+    ) async throws -> (T, HTTPURLResponse) {
         guard let credentials else { throw SubsonicClient.ClientError.notConfigured }
 
         // One retry after a fresh login: the JWT expires, and the only way to find out is
@@ -142,17 +197,27 @@ actor NavidromeClient {
             request.setValue("Bearer \(bearer)", forHTTPHeaderField: "x-nd-authorization")
 
             let (data, response) = try await session.data(for: request)
-            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            guard let http = response as? HTTPURLResponse else {
+                throw SubsonicClient.ClientError.transport("No response from Navidrome.")
+            }
 
-            if status == 401, attempt == 0 {
+            if http.statusCode == 401, attempt == 0 {
                 token = nil
                 continue
             }
 
-            guard status == 200 else {
-                throw SubsonicClient.ClientError.server("Navidrome replied \(status).")
+            guard http.statusCode == 200 else {
+                throw SubsonicClient.ClientError.server("Navidrome replied \(http.statusCode).")
             }
-            return try decoder.decode(T.self, from: data)
+
+            // Every response carries a freshly issued JWT. Adopting it means a long-lived
+            // session slides forward instead of hitting the 401 path days later.
+            if let refreshed = http.value(forHTTPHeaderField: "x-nd-authorization"),
+               !refreshed.isEmpty {
+                token = refreshed
+            }
+
+            return (try decoder.decode(T.self, from: data), http)
         }
 
         throw SubsonicClient.ClientError.server("Navidrome would not authenticate.")

@@ -406,6 +406,42 @@ struct SimilarSongs: Decodable, PayloadKeyed, Sendable {
     static var payloadKey: String { "similarSongs2" }
 }
 
+/// `getSong.view` — verified against this server. The one lookup the app needs when it
+/// holds a song id and nothing else: a lyric-search hit, a resume bookmark, a Siri request
+/// that named a track.
+struct FetchedSong: Decodable, PayloadKeyed, Sendable {
+    let song: Song
+    static var payloadKey: String { "song" }
+
+    /// Same shape as `CreatedPlaylist`: the payload *is* the song, so the key is consumed
+    /// by the envelope and this decodes from the same object rather than a nested one.
+    init(from decoder: Decoder) throws {
+        song = try Song(from: decoder)
+    }
+}
+
+/// A per-track resume position.
+///
+/// **Not** `savePlayQueue`, which stores one position for the whole queue and is how this
+/// app and desktop Feishin share a session. A bookmark is per song, survives the queue
+/// being replaced, and is what a two-hour live set or a DJ mix needs. Don't merge them.
+struct BookmarkList: Decodable, PayloadKeyed, Sendable {
+    var bookmark: [Bookmark]?
+    static var payloadKey: String { "bookmarks" }
+}
+
+struct Bookmark: Decodable, Sendable, Identifiable {
+    let entry: Song
+    /// Milliseconds — the unit `savePlayQueue` uses, not the seconds `scrobble` wants.
+    let position: Int
+    var comment: String?
+    var created: String?
+    var changed: String?
+
+    var id: String { entry.id }
+    var seconds: Double { Double(position) / 1_000 }
+}
+
 struct LyricLine: Codable, Hashable, Sendable {
     /// Milliseconds from the start of the track. Absent on unsynced lyrics.
     var start: Int?

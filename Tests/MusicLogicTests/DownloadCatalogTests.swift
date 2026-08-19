@@ -123,6 +123,44 @@ struct DownloadCatalogTests {
     }
 }
 
+/// The whole point of a quality picker is the size it saves, so the arithmetic behind that
+/// promise is worth pinning — a trip plan that under-counts by a factor of eight is worse
+/// than no plan.
+struct DownloadQualityTests {
+    private var song: Song {
+        var song = Song(id: "a", title: "Let It Happen")
+        song.duration = 466
+        song.size = 102_063_654
+        return song
+    }
+
+    @Test func originalUsesTheServersOwnFigure() {
+        // Navidrome populates `size`, so this is exact rather than estimated.
+        #expect(DownloadQuality.original.estimatedBytes(for: song) == 102_063_654)
+    }
+
+    @Test func transcodedRungsAreBitrateTimesDuration() {
+        // 466 s at 256 kbps ≈ 14.9 MB, against 102 MB of FLAC.
+        #expect(DownloadQuality.standard.estimatedBytes(for: song) == 466 * 256 * 1_000 / 8)
+        #expect(DownloadQuality.standard.estimatedBytes(for: song) < 15_000_000)
+    }
+
+    @Test func aSongWithNoDurationEstimatesZeroRatherThanGuessing() {
+        // Better to show nothing than to invent a number a trip plan then trusts.
+        var unknown = song
+        unknown.duration = nil
+        #expect(DownloadQuality.high.estimatedBytes(for: unknown) == 0)
+    }
+
+    /// Every file downloaded before the picker existed has no quality key at all, and
+    /// those are all originals.
+    @Test func aCatalogEntryWithNoQualityReadsAsOriginal() throws {
+        let legacy = Data(#"{"song":{"id":"a","title":"T"},"filename":"a.flac","byteCount":10,"addedAt":0}"#.utf8)
+        let entry = try JSONDecoder().decode(DownloadCatalog.Entry.self, from: legacy)
+        #expect(entry.quality == .original)
+    }
+}
+
 /// Formatting is small but it is on screen constantly, and the duration helpers had
 /// off-by-one potential around the minute boundary.
 struct FormattingTests {

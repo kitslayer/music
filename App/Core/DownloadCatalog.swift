@@ -1,5 +1,63 @@
 import Foundation
 
+/// How much of a file to fetch.
+///
+/// `original` is the point of this app — the FLAC, byte for byte — and stays the default
+/// everywhere. The transcoded rungs exist for the one case where that does not fit: five
+/// days away from a network is roughly 54 GB of FLAC and 1.7 GB at 256 kbps.
+///
+/// The server does the work, through `stream.view?format=mp3&maxBitRate=`. That is the
+/// same path already used for containers iOS cannot decode, not a second mechanism —
+/// which is why a quality choice cannot go wrong in a way original downloads don't.
+enum DownloadQuality: String, Codable, Sendable, CaseIterable, Identifiable {
+    case original
+    case high
+    case standard
+    case small
+
+    var id: String { rawValue }
+
+    /// Nil for `original`, which is a `download.view` of the stored file.
+    var maxBitRate: Int? {
+        switch self {
+        case .original: return nil
+        case .high: return 320
+        case .standard: return 256
+        case .small: return 128
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .original: return "Original"
+        case .high: return "High"
+        case .standard: return "Standard"
+        case .small: return "Small"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .original: return "Lossless, as stored on the server"
+        case .high: return "320 kbps MP3"
+        case .standard: return "256 kbps MP3"
+        case .small: return "128 kbps MP3"
+        }
+    }
+
+    /// What one song is expected to occupy.
+    ///
+    /// Exact for `original`, because Navidrome populates `size`. For the transcoded rungs
+    /// it is bitrate × duration, which is close enough to plan a trip around and the only
+    /// figure available before the bytes arrive — the real size replaces it the moment the
+    /// transfer finishes.
+    func estimatedBytes(for song: Song) -> Int64 {
+        guard let maxBitRate else { return Int64(song.size ?? 0) }
+        let seconds = song.duration ?? 0
+        return Int64(seconds) * Int64(maxBitRate) * 1_000 / 8
+    }
+}
+
 /// What is on this phone.
 ///
 /// Plain JSON on disk rather than SwiftData, for one decisive reason: this is written
@@ -33,6 +91,15 @@ struct DownloadCatalog: Codable, Sendable {
         /// Downloads screen. Nil for a single song.
         var groupID: String?
         var groupName: String?
+        /// `DownloadQuality.rawValue`. Optional, and read through `quality` below, because
+        /// every file downloaded before this existed has no such key — and a
+        /// non-optional with a default would make the whole catalog undecodable, which is
+        /// the bug this batch went looking for in `ServerOutbox`.
+        var qualityRaw: String?
+
+        var quality: DownloadQuality {
+            qualityRaw.flatMap(DownloadQuality.init(rawValue:)) ?? .original
+        }
 
         var id: String { song.id }
         var url: URL { Paths.media.appendingPathComponent(filename) }

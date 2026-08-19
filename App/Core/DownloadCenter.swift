@@ -99,19 +99,26 @@ final class DownloadCenter {
 
     // MARK: - Writing
 
-    func download(_ songs: [Song], groupID: String? = nil, groupName: String? = nil) {
+    func download(
+        _ songs: [Song],
+        groupID: String? = nil,
+        groupName: String? = nil,
+        quality: DownloadQuality = .original
+    ) {
         let wanted = songs.filter { status(for: $0.id) == .none }
         guard !wanted.isEmpty, let signer = appState?.signer else { return }
 
         for song in wanted {
-            // Original bytes, always -- except for containers iOS cannot decode, which
-            // would otherwise land on disk as a perfect copy of something unplayable.
-            // Those are fetched transcoded, and the stored extension has to match the
-            // bytes or AVFoundation picks the wrong decoder.
-            let transcode = PlaybackController.needsTranscode(song.suffix)
+            // Original bytes unless asked otherwise -- except for containers iOS cannot
+            // decode, which would otherwise land on disk as a perfect copy of something
+            // unplayable. Those are fetched transcoded whatever the setting, and the
+            // stored extension has to match the bytes or AVFoundation picks the wrong
+            // decoder.
+            let bitRate = quality.maxBitRate ?? 320
+            let transcode = quality != .original || PlaybackController.needsTranscode(song.suffix)
             let endpoint = transcode ? "stream.view" : "download.view"
             let query: [String: String] = transcode
-                ? ["id": song.id, "format": "mp3", "maxBitRate": "320"]
+                ? ["id": song.id, "format": "mp3", "maxBitRate": String(bitRate)]
                 : ["id": song.id]
             guard let url = signer.url(endpoint, query) else { continue }
 
@@ -119,10 +126,13 @@ final class DownloadCenter {
             let entry = DownloadCatalog.Entry(
                 song: song,
                 filename: "\(song.id).\(suffix)",
-                byteCount: Int64(song.size ?? 0),
+                // An estimate for a transcode, exact for the original; either way the
+                // real figure lands when the transfer completes.
+                byteCount: quality.estimatedBytes(for: song),
                 addedAt: .now,
                 groupID: groupID,
-                groupName: groupName
+                groupName: groupName,
+                qualityRaw: quality.rawValue
             )
 
             Task {

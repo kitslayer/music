@@ -343,6 +343,35 @@ actor SubsonicClient {
         ).album ?? []
     }
 
+    /// Albums released in a span of years, for decade browsing.
+    ///
+    /// Two things about the server's answer. It filters on the **release** year while the
+    /// `year` each row carries is the *original* year, so a 1979 record reissued in 1995
+    /// comes back under the 1990s with "1979" printed on it — verified. Don't re-filter
+    /// these rows client-side on `year` or legitimate ones vanish. And the only order
+    /// control is the direction of the span: `from < to` gives oldest first, reversed
+    /// gives newest first.
+    func albums(
+        fromYear: Int,
+        toYear: Int,
+        size: Int = 100,
+        offset: Int = 0,
+        scope: LibraryScope = .all
+    ) async throws -> [Album] {
+        try await get(
+            "getAlbumList2.view",
+            query: [
+                "fromYear": String(fromYear),
+                "musicFolderId": scope.queryValue,
+                "offset": String(offset),
+                "size": String(size),
+                "toYear": String(toYear),
+                "type": "byYear",
+            ],
+            as: AlbumList2.self
+        ).album ?? []
+    }
+
     func albumDetail(id: String) async throws -> AlbumDetail {
         try await get("getAlbum.view", query: ["id": id], as: AlbumDetail.self)
     }
@@ -357,6 +386,11 @@ actor SubsonicClient {
 
     func artistDetail(id: String) async throws -> ArtistDetail {
         try await get("getArtist.view", query: ["id": id], as: ArtistDetail.self)
+    }
+
+    /// One song by id, for the cases where an id is all there is.
+    func song(id: String) async throws -> Song {
+        try await get("getSong.view", query: ["id": id], as: FetchedSong.self).song
     }
 
     func topSongs(artist: String, count: Int = 5) async throws -> [Song] {
@@ -582,6 +616,34 @@ actor SubsonicClient {
         if let error = decoded.subsonicResponse.error {
             throw ClientError.server(error.message)
         }
+    }
+
+    // MARK: - Resume positions
+
+    /// Bookmarks are per track, unlike `savedQueue`. Verified end to end against this
+    /// server: create, list and delete all work, and the list came back empty to start
+    /// with, so nothing else on this account is using them.
+    func bookmarks() async throws -> [Bookmark] {
+        try await get("getBookmarks.view", as: BookmarkList.self).bookmark ?? []
+    }
+
+    func createBookmark(
+        id: String,
+        positionMilliseconds: Int,
+        comment: String? = nil
+    ) async throws {
+        try await perform(
+            "createBookmark.view",
+            query: [
+                "comment": comment,
+                "id": id,
+                "position": String(max(0, positionMilliseconds)),
+            ]
+        )
+    }
+
+    func deleteBookmark(id: String) async throws {
+        try await perform("deleteBookmark.view", query: ["id": id])
     }
 
     // MARK: - Now playing elsewhere
