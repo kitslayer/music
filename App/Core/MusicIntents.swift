@@ -229,7 +229,7 @@ struct MusicShortcuts: AppShortcutsProvider {
                 "Play my favorites in \(.applicationName)",
             ],
             shortTitle: "Play Favourites",
-            systemImageName: "star.fill"
+            systemImageName: "heart.fill"
         )
         AppShortcut(
             intent: MakeVibePlaylistIntent(),

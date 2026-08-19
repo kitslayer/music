@@ -5,6 +5,8 @@ struct HomeView: View {
     @Environment(LibraryScopeStore.self) private var scope
 
     @State private var model = HomeModel()
+    /// -1 means both libraries. Its own setting, not the browsing scope.
+    @AppStorage("mixes.folderID") private var mixFolderID = -1
 
     var body: some View {
         NavigationStack {
@@ -28,6 +30,16 @@ struct HomeView: View {
                         favoriteSongs
                         albumShelf("Most Played", model.mostPlayed, sort: .frequent)
                         forgottenFavourites
+
+                        // The bottom of the page asks for more mixes too, so scrolling
+                        // down keeps the shelf growing without touching it sideways.
+                        if !appState.mixes.mixes.isEmpty, appState.mixes.canLoadMore {
+                            Color.clear
+                                .frame(height: 1)
+                                .task {
+                                    appState.mixes.loadMore(appState: appState, scope: mixScope)
+                                }
+                        }
                     }
                 }
                 .padding(.vertical, Metrics.itemSpacing)
@@ -65,8 +77,8 @@ struct HomeView: View {
             // Separate from the shelves above: this one is built from a dozen requests
             // and only once a day, so it must not hold up the rest of Home or be redone
             // by every pull-to-refresh.
-            .task(id: scope.generation) {
-                appState.mixes.load(appState: appState, scope: scope.scope)
+            .task(id: mixFolderID) {
+                appState.mixes.load(appState: appState, scope: mixScope)
             }
         }
     }
@@ -101,13 +113,40 @@ struct HomeView: View {
 
     /// The one shelf here that could not exist without the app's own play log: the
     /// server records how many times a track was played, never when.
+    /// The mixes have their own library choice, separate from the browsing scope in the
+    /// toolbar: "recommend from both libraries while I browse just one" is a reasonable
+    /// thing to want, and it is the mixes people care about scoping.
+    private var mixScope: LibraryScope {
+        guard mixFolderID != -1,
+              let folder = scope.folders.first(where: { $0.id == mixFolderID })
+        else { return .all }
+        return .folder(id: folder.id, name: folder.name)
+    }
+
+    @ViewBuilder
+    private var mixScopeMenu: some View {
+        if scope.isSwitchable {
+            Menu {
+                Picker("Library", selection: $mixFolderID) {
+                    Text("Both Libraries").tag(-1)
+                    ForEach(scope.folders) { folder in
+                        Text(folder.name).tag(folder.id)
+                    }
+                }
+            } label: {
+                Text(mixFolderID == -1 ? "Both" : mixScope.shortName)
+                    .font(.subheadline)
+            }
+        }
+    }
+
     @ViewBuilder
     private var mixShelf: some View {
         if appState.mixes.mixes.isEmpty, appState.mixes.isBuilding {
             // The first build is a dozen requests, and an absent shelf is
             // indistinguishable from a missing feature.
             VStack(alignment: .leading, spacing: Metrics.headerToContent) {
-                ShelfHeader(title: "Made for You")
+                ShelfHeader(title: "Made for You", seeAll: .dailyMixes) { mixScopeMenu }
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                     Text("Building today's mixes…")
@@ -118,7 +157,7 @@ struct HomeView: View {
             }
         } else if !appState.mixes.mixes.isEmpty {
             VStack(alignment: .leading, spacing: Metrics.headerToContent) {
-                ShelfHeader(title: "Made for You")
+                ShelfHeader(title: "Made for You", seeAll: .dailyMixes) { mixScopeMenu }
 
                 ScrollView(.horizontal) {
                     LazyHStack(spacing: Metrics.itemSpacing) {
@@ -138,6 +177,17 @@ struct HomeView: View {
                                 .frame(width: Metrics.cardWidth, alignment: .leading)
                             }
                             .buttonStyle(.plain)
+                        }
+
+                        // Reaching the end of the row builds more. A sentinel rather than
+                        // scroll maths: `.task` on a lazily created view fires exactly
+                        // when it comes into view and cancels correctly.
+                        if appState.mixes.canLoadMore {
+                            ProgressView()
+                                .frame(width: 80, height: Metrics.cardWidth)
+                                .task {
+                                    appState.mixes.loadMore(appState: appState, scope: mixScope)
+                                }
                         }
                     }
                     .scrollTargetLayout()
@@ -207,15 +257,17 @@ struct HomeView: View {
     }
 }
 
-struct ShelfHeader: View {
+struct ShelfHeader<Accessory: View>: View {
     let title: String
     var seeAll: Destination?
+    @ViewBuilder var accessory: () -> Accessory
 
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
             Text(title)
                 .font(.title3.weight(.semibold))
             Spacer()
+            accessory()
             if let seeAll {
                 NavigationLink(value: seeAll) {
                     Text("See All")
@@ -224,6 +276,12 @@ struct ShelfHeader: View {
             }
         }
         .padding(.horizontal, Metrics.gutter)
+    }
+}
+
+extension ShelfHeader where Accessory == EmptyView {
+    init(title: String, seeAll: Destination? = nil) {
+        self.init(title: title, seeAll: seeAll) { EmptyView() }
     }
 }
 

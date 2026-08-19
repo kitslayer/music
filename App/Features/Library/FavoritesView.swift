@@ -68,7 +68,7 @@ struct FavoritesView: View {
             if !isLoading, starred?.songs.isEmpty == true, starred?.albums.isEmpty == true {
                 ContentUnavailableView(
                     "No Favourites",
-                    systemImage: "star",
+                    systemImage: "heart",
                     description: Text("Starred songs and albums appear here.")
                 )
             }

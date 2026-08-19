@@ -59,7 +59,7 @@ struct SelectionToolbar: View {
             action("Download", "arrow.down.circle") {
                 downloads.download(chosen)
             }
-            action("Favourite", "star") {
+            action("Favourite", "heart") {
                 for song in chosen where !userState.isStarred(song) {
                     userState.toggleStar(song)
                 }

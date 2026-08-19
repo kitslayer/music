@@ -39,7 +39,7 @@ struct SongRow: View {
             DownloadedBadge(songID: song.id)
 
             if userState.isStarred(song) {
-                Image(systemName: "star.fill")
+                Image(systemName: "heart.fill")
                     .font(.caption)
                     .foregroundStyle(Color.appTint)
             }

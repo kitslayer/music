@@ -159,7 +159,10 @@ struct NowPlayingView: View {
 
             if let song = player.currentSong {
                 Menu {
-                    SongMenu(song: song)
+                    // No rating rows here: the five stars are already on screen a few
+                    // points below, and a heart is what marks a favourite now — one
+                    // meaning per glyph.
+                    SongMenu(song: song, showsRating: false)
                     Divider()
                     SleepTimerMenu()
                 } label: {
@@ -496,10 +499,13 @@ private struct PlayerSeekBar: View {
                 in: 0...max(player.duration, 1),
                 onEditingChanged: { editing in
                     // Commit on release rather than seeking continuously.
-                    if !editing, let value = scrubValue {
-                        player.seek(to: value)
-                        scrubValue = nil
-                    }
+                    guard !editing else { return }
+                    if let value = scrubValue { player.seek(to: value) }
+                    // Cleared unconditionally. While it was only cleared alongside a
+                    // committed seek, a drag that ended without one left the slider
+                    // showing a held value and it stopped following the music entirely
+                    // until the next successful scrub.
+                    scrubValue = nil
                 }
             )
             // Disabled rather than hidden: the row keeps its height, so the controls
@@ -522,6 +528,9 @@ private struct PlayerSeekBar: View {
         }
         .padding(.horizontal, 24)
         .padding(.top, 6)
+        // A track change during a scrub would otherwise leave the thumb pinned at a
+        // position in the *previous* song.
+        .onChange(of: player.currentSong?.id) { scrubValue = nil }
     }
 }
 

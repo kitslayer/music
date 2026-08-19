@@ -393,6 +393,12 @@ final class PlaybackController {
     // MARK: - Scrobbling
 
     private func report(_ event: PlayTracker.Event, submission: Bool) {
+        // Listening is the other trigger for more mixes, alongside scrolling to the end of
+        // the shelf. Cheap: it does nothing once the shelf is deep enough for one session.
+        if submission, let appState {
+            appState.mixes.topUpWhileListening(appState: appState, scope: appState.scope.scope)
+        }
+
         guard let appState else { return }
 
         if submission, let song = queue.current, song.id == event.songID {
@@ -516,6 +522,17 @@ final class PlaybackController {
         // corrected.
         if output.duration > 0, abs(output.duration - duration) > 0.5 {
             duration = output.duration
+            tracker.trackChanged(to: queue.current, duration: duration)
+        } else if elapsed > duration, elapsed > 0 {
+            // The file is longer than anything claiming to know its length.
+            //
+            // Panchiko's "Ginkgo" is the case that found this: the server says 157.4 s,
+            // while its own size and bitrate imply 214 s — the FLAC's STREAMINFO is wrong,
+            // and AVFoundation, which decodes the actual stream, keeps playing past the
+            // end. Trusting the metadata left the slider parked at 2:37 with audio still
+            // going. Whatever the tags say, the position that has already been reached is
+            // a lower bound on the truth.
+            duration = elapsed
             tracker.trackChanged(to: queue.current, duration: duration)
         } else if duration <= 0, let known = queue.current?.duration, known > 0 {
             // Last resort, and the one that actually matters: whatever went wrong when

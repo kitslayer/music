@@ -30,6 +30,7 @@ enum Destination: Hashable {
     case lyricSearch(String)
     case vibePlaylist
     case libraryHealth
+    case dailyMixes
 }
 
 extension View {
@@ -89,6 +90,8 @@ extension View {
                 VibePlaylistView()
             case .libraryHealth:
                 LibraryHealthView()
+            case .dailyMixes:
+                DailyMixesView()
             }
         }
     }

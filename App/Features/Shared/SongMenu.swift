@@ -14,6 +14,9 @@ struct SongMenu: View {
     /// Present only where "go to album/artist" would navigate somewhere you already
     /// are.
     var showsNavigation = true
+    /// Set false where a rating control is already on screen — the player. Two ways to
+    /// set the same 0–5 value, a foot apart, reads as a bug rather than a convenience.
+    var showsRating = true
 
     private func startRadio() {
         Task {
@@ -68,24 +71,26 @@ struct SongMenu: View {
 
         Button(
             userState.isStarred(song) ? "Remove Favourite" : "Favourite",
-            systemImage: userState.isStarred(song) ? "star.slash" : "star"
+            systemImage: userState.isStarred(song) ? "heart.slash" : "heart"
         ) {
             userState.toggleStar(song)
         }
 
-        Menu("Rate", systemImage: "star.leadinghalf.filled") {
-            // Highest first, so the list reads top-down like the stars do
-            // left-to-right.
-            ForEach((1...5).reversed(), id: \.self) { value in
-                Button {
-                    userState.setRating(
-                        id: song.id, to: value, current: userState.rating(song)
-                    )
-                } label: {
-                    if value == userState.rating(song) {
-                        Label("\(value) Stars", systemImage: "checkmark")
-                    } else {
-                        Text("\(value) Star\(value == 1 ? "" : "s")")
+        if showsRating {
+            Menu("Rate", systemImage: "star.leadinghalf.filled") {
+                // Highest first, so the list reads top-down like the stars do
+                // left-to-right.
+                ForEach((1...5).reversed(), id: \.self) { value in
+                    Button {
+                        userState.setRating(
+                            id: song.id, to: value, current: userState.rating(song)
+                        )
+                    } label: {
+                        if value == userState.rating(song) {
+                            Label("\(value) Stars", systemImage: "checkmark")
+                        } else {
+                            Text("\(value) Star\(value == 1 ? "" : "s")")
+                        }
                     }
                 }
             }
@@ -160,7 +165,7 @@ struct FavoriteButton: View {
         Button {
             userState.toggleStar(id: id, kind: kind, currentlyStarred: starred)
         } label: {
-            Image(systemName: starred ? "star.fill" : "star")
+            Image(systemName: starred ? "heart.fill" : "heart")
                 .foregroundStyle(starred ? Color.appTint : .secondary)
         }
         .buttonStyle(.plain)
@@ -185,7 +190,7 @@ struct FavoriteSwipeButton: View {
         } label: {
             Label(
                 starred ? "Unfavourite" : "Favourite",
-                systemImage: starred ? "star.slash.fill" : "star.fill"
+                systemImage: starred ? "heart.slash.fill" : "heart.fill"
             )
         }
         .tint(starred ? .gray : .appTint)
@@ -237,7 +242,7 @@ private struct AlbumFavoriteModifier: ViewModifier {
                 Divider()
                 Button(
                     starred ? "Remove Favourite" : "Favourite",
-                    systemImage: starred ? "star.slash" : "star"
+                    systemImage: starred ? "heart.slash" : "heart"
                 ) {
                     userState.toggleStar(album)
                 }

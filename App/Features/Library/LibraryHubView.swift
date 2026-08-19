@@ -24,7 +24,7 @@ struct LibraryHubView: View {
                     row("Recently Played", "clock.arrow.circlepath", .albums(.recent))
                     row("Most Played", "chart.bar", .albums(.frequent))
                     row("Genres", "guitars", .genres)
-                    row("Favourites", "star", .favorites)
+                    row("Favourites", "heart", .favorites)
                     // The one row whose contents live on this phone, so it is the
                     // one row where a count says something the screen does not.
                     row(
