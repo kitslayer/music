@@ -182,7 +182,7 @@ final class DailyMixes {
             nextRecipe = stored.nextRecipe ?? stored.mixes.count
             builtDay = stored.day
             builtScope = stored.scope
-            for mix in stored.mixes { record(mix.songs, into: &used, &identities) }
+            for mix in stored.mixes { record(mix.songs) }
             if mixes.count >= wanted { return }
         }
 
@@ -212,6 +212,7 @@ final class DailyMixes {
                 day: day
             ) else { continue }
 
+            record(mix.songs)
             mixes.append(mix)
             added += 1
             attempts = 0
@@ -284,25 +285,25 @@ final class DailyMixes {
             return await heavyRotation(
                 appState: appState, artists: context.artists, recent: context.recent,
                 candidates: context.artistCandidates, day: day,
-                used: &used, identities: &identities
+                used: used, identities: identities
             )
 
         case .deepCuts:
             return await deepCuts(
                 appState: appState, artists: context.artists, scope: scope, day: day,
-                used: &used, identities: &identities
+                used: used, identities: identities
             )
 
         case .newToYou:
             return await newToYou(
                 appState: appState, samples: context.samples, scope: scope, day: day,
-                used: &used, identities: &identities
+                used: used, identities: identities
             )
 
         case .fresh:
             return await freshAdditions(
                 appState: appState, scope: scope, day: day,
-                used: &used, identities: &identities
+                used: used, identities: identities
             )
 
         case let .genre(position):
@@ -310,7 +311,7 @@ final class DailyMixes {
             return await genreMix(
                 appState: appState, genre: context.genres[position], index: index,
                 unplayedOnly: false, scope: scope, day: day,
-                used: &used, identities: &identities
+                used: used, identities: identities
             )
 
         case let .unheardGenre(position):
@@ -318,14 +319,14 @@ final class DailyMixes {
             return await genreMix(
                 appState: appState, genre: context.genres[position], index: index,
                 unplayedOnly: true, scope: scope, day: day,
-                used: &used, identities: &identities
+                used: used, identities: identities
             )
 
         case let .artistRadio(position):
             guard context.artists.indices.contains(position) else { return nil }
             return await artistRadio(
                 appState: appState, artist: context.artists[position], index: index,
-                scope: scope, day: day, used: &used, identities: &identities
+                scope: scope, day: day, used: used, identities: identities
             )
 
         case let .decade(position):
@@ -333,7 +334,7 @@ final class DailyMixes {
             guard decades.indices.contains(position) else { return nil }
             return await decadeMix(
                 appState: appState, decade: decades[position], index: index,
-                scope: scope, day: day, used: &used, identities: &identities
+                scope: scope, day: day, used: used, identities: identities
             )
         }
     }
@@ -384,8 +385,8 @@ final class DailyMixes {
         artists: [String],
         scope: LibraryScope,
         day: Date,
-        used: inout Set<String>,
-        identities: inout Set<String>
+        used: Set<String>,
+        identities: Set<String>
     ) async -> Mix? {
         var pool: [Song] = []
         for artist in artists.prefix(4) {
@@ -408,7 +409,6 @@ final class DailyMixes {
             "mixes", "deep cuts: \(pool.count) candidates, \(chosen.count) chosen"
         )
         guard chosen.count >= Self.minimumTracks else { return nil }
-        record(chosen, into: &used, &identities)
 
         return Mix(
             id: "deep",
@@ -428,8 +428,8 @@ final class DailyMixes {
         index: Int,
         scope: LibraryScope,
         day: Date,
-        used: inout Set<String>,
-        identities: inout Set<String>
+        used: Set<String>,
+        identities: Set<String>
     ) async -> Mix? {
         let top = (try? await appState.client.topSongs(artist: artist, count: 4)) ?? []
         guard let seed = top.first else { return nil }
@@ -447,7 +447,6 @@ final class DailyMixes {
             "mixes", "radio “\(artist)”: \(pool.count) candidates, \(chosen.count) chosen"
         )
         guard chosen.count >= Self.minimumTracks else { return nil }
-        record(chosen, into: &used, &identities)
 
         return Mix(
             id: "radio-\(index)",
@@ -469,8 +468,8 @@ final class DailyMixes {
         index: Int,
         scope: LibraryScope,
         day: Date,
-        used: inout Set<String>,
-        identities: inout Set<String>
+        used: Set<String>,
+        identities: Set<String>
     ) async -> Mix? {
         let albums = (try? await appState.client.albums(
             fromYear: decade, toYear: decade + 9, size: 40, scope: scope
@@ -493,7 +492,6 @@ final class DailyMixes {
             "mixes", "decade \(decade)s: \(albums.count) albums, \(chosen.count) chosen"
         )
         guard chosen.count >= Self.minimumTracks else { return nil }
-        record(chosen, into: &used, &identities)
 
         return Mix(
             id: "decade-\(index)",
@@ -511,8 +509,8 @@ final class DailyMixes {
         appState: AppState,
         scope: LibraryScope,
         day: Date,
-        used: inout Set<String>,
-        identities: inout Set<String>
+        used: Set<String>,
+        identities: Set<String>
     ) async -> Mix? {
         let albums = (try? await appState.client.albums(type: .newest, size: 10, scope: scope)) ?? []
         var pool: [Song] = []
@@ -532,7 +530,6 @@ final class DailyMixes {
             "mixes", "fresh: \(albums.count) new albums, \(pool.count) unplayed, \(chosen.count) chosen"
         )
         guard chosen.count >= Self.minimumTracks else { return nil }
-        record(chosen, into: &used, &identities)
 
         return Mix(
             id: "fresh",
@@ -594,8 +591,8 @@ final class DailyMixes {
         recent: Set<String>,
         candidates: [Song],
         day: Date,
-        used: inout Set<String>,
-        identities: inout Set<String>
+        used: Set<String>,
+        identities: Set<String>
     ) async -> Mix? {
         guard !artists.isEmpty, !candidates.isEmpty else { return nil }
 
@@ -620,7 +617,6 @@ final class DailyMixes {
             "heavy: \(artists.count) artists, \(candidates.count) candidates, \(chosen.count) chosen"
         )
         guard chosen.count >= Self.minimumTracks else { return nil }
-        record(chosen, into: &used, &identities)
 
         return Mix(
             id: "heavy",
@@ -669,8 +665,8 @@ final class DailyMixes {
         unplayedOnly: Bool,
         scope: LibraryScope,
         day: Date,
-        used: inout Set<String>,
-        identities: inout Set<String>
+        used: Set<String>,
+        identities: Set<String>
     ) async -> Mix? {
         var pool = (try? await appState.client.songsByGenre(genre, count: 300, scope: scope)) ?? []
         guard !pool.isEmpty else {
@@ -698,7 +694,6 @@ final class DailyMixes {
             "genre “\(genre)”\(unplayedOnly ? " (unheard)" : ""): \(pool.count) candidates, \(chosen.count) chosen"
         )
         guard chosen.count >= Self.minimumTracks else { return nil }
-        record(chosen, into: &used, &identities)
 
         // Named for the genre, because "Shoegaze Mix" says something and "Mix 2" does not.
         return Mix(
@@ -716,8 +711,8 @@ final class DailyMixes {
         samples: [MixEngine.Sample],
         scope: LibraryScope,
         day: Date,
-        used: inout Set<String>,
-        identities: inout Set<String>
+        used: Set<String>,
+        identities: Set<String>
     ) async -> Mix? {
         var pool: [Song] = []
 
@@ -752,7 +747,6 @@ final class DailyMixes {
             "mixes", "new: \(pool.count) unplayed candidates, \(chosen.count) chosen"
         )
         guard chosen.count >= Self.minimumTracks else { return nil }
-        record(chosen, into: &used, &identities)
 
         return Mix(
             id: "new",
@@ -772,7 +766,8 @@ final class DailyMixes {
         return MixEngine.ranked(weights, limit: 3)
     }
 
-    private func record(_ songs: [Song], into used: inout Set<String>, _ identities: inout Set<String>) {
+    /// Marks a mix's tracks as spent, so no later page can use them again.
+    private func record(_ songs: [Song]) {
         for song in songs {
             used.insert(song.id)
             identities.insert(MixEngine.identity(song))
