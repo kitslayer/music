@@ -103,7 +103,20 @@ struct HomeView: View {
     /// server records how many times a track was played, never when.
     @ViewBuilder
     private var mixShelf: some View {
-        if !appState.mixes.mixes.isEmpty {
+        if appState.mixes.mixes.isEmpty, appState.mixes.isBuilding {
+            // The first build is a dozen requests, and an absent shelf is
+            // indistinguishable from a missing feature.
+            VStack(alignment: .leading, spacing: Metrics.headerToContent) {
+                ShelfHeader(title: "Made for You")
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Building today's mixes…")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, Metrics.gutter)
+            }
+        } else if !appState.mixes.mixes.isEmpty {
             VStack(alignment: .leading, spacing: Metrics.headerToContent) {
                 ShelfHeader(title: "Made for You")
 

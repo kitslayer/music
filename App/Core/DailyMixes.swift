@@ -32,9 +32,11 @@ final class DailyMixes {
         }
     }
 
-    /// Below this a "mix" is a short playlist, and a half-filled shelf on Home reads as a
-    /// bug rather than as a young library. The cold-start path exists so day one clears it.
-    static let minimumTracks = 15
+    /// Below this a "mix" is a short playlist. Twelve rather than fifteen because the
+    /// original figure was silently dropping mixes that were perfectly usable: eight
+    /// favourite artists at three tracks each is 24 candidates *before* de-duplication and
+    /// the excluded week, and this library's twin copies eat a lot of that.
+    static let minimumTracks = 12
 
     private(set) var mixes: [Mix] = []
     private(set) var isBuilding = false
@@ -49,6 +51,14 @@ final class DailyMixes {
     }
 
     func mix(id: String) -> Mix? { mixes.first { $0.id == id } }
+
+    /// Throws away today's answer so the next `load` rebuilds. Used by the Diagnostics
+    /// screen, since "why is this shelf empty" is otherwise unanswerable from the phone.
+    func forgetToday() {
+        builtDay = nil
+        builtScope = nil
+        mixes = []
+    }
 
     /// Restores today's mixes from disk, or builds them.
     ///
@@ -74,7 +84,15 @@ final class DailyMixes {
         let built = await build(appState: appState, scope: scope, day: today)
         isBuilding = false
 
-        guard !built.isEmpty else { return }
+        guard !built.isEmpty else {
+            // Logged because the failure is invisible otherwise: an empty shelf simply
+            // does not render, which looks identical to the feature not existing.
+            await Diagnostics.shared.record("mixes", "built nothing — see the stage lines above")
+            return
+        }
+        await Diagnostics.shared.record(
+            "mixes", "built " + built.map { "\($0.id):\($0.songs.count)" }.joined(separator: " ")
+        )
         mixes = built
         builtDay = today
         builtScope = scopeKey
@@ -85,7 +103,16 @@ final class DailyMixes {
 
     private func build(appState: AppState, scope: LibraryScope, day: Date) async -> [Mix] {
         let samples = await samples(appState: appState)
-        guard !samples.isEmpty else { return [] }
+        guard !samples.isEmpty else {
+            await Diagnostics.shared.record(
+                "mixes", "no history and no server play counts — nothing to build from"
+            )
+            return []
+        }
+        await Diagnostics.shared.record(
+            "mixes",
+            "\(samples.count) samples (\(appState.history.plays.count) local plays)"
+        )
 
         let artists = MixEngine.ranked(MixEngine.artistScores(samples), limit: 8)
         let recent = MixEngine.songIDs(samples, playedWithin: 7)
@@ -172,9 +199,14 @@ final class DailyMixes {
         }
 
         var generator = MixEngine.DayRandom(day: day, salt: 1)
-        let fresh = candidates.filter { !recent.contains($0.id) }
+        // This week's listening goes to the back rather than being thrown out. Filtering
+        // it out was the bug: the top artists are precisely the ones just played, so on an
+        // active week the filter could take the pool below the minimum and the mix
+        // vanished entirely — worse than showing a track heard on Tuesday.
+        let ordered = candidates.filter { !recent.contains($0.id) }
+            + candidates.filter { recent.contains($0.id) }
         let chosen = MixEngine.choose(
-            from: fresh.isEmpty ? candidates : fresh,
+            from: ordered,
             limit: 25,
             perArtist: 3,
             excluding: used,
@@ -182,6 +214,10 @@ final class DailyMixes {
             using: &generator
         )
 
+        await Diagnostics.shared.record(
+            "mixes",
+            "heavy: \(artists.count) artists, \(candidates.count) candidates, \(chosen.count) chosen"
+        )
         guard chosen.count >= Self.minimumTracks else { return (nil, candidates) }
         record(chosen, into: &used, &identities)
 
@@ -229,7 +265,10 @@ final class DailyMixes {
         identities: inout Set<String>
     ) async -> Mix? {
         let pool = (try? await appState.client.songsByGenre(genre, count: 200, scope: scope)) ?? []
-        guard !pool.isEmpty else { return nil }
+        guard !pool.isEmpty else {
+            await Diagnostics.shared.record("mixes", "genre: “\(genre)” returned nothing")
+            return nil
+        }
 
         var generator = MixEngine.DayRandom(day: day, salt: 2)
         let chosen = MixEngine.choose(
@@ -239,6 +278,9 @@ final class DailyMixes {
             excluding: used,
             usedIdentities: identities,
             using: &generator
+        )
+        await Diagnostics.shared.record(
+            "mixes", "genre “\(genre)”: \(pool.count) candidates, \(chosen.count) chosen"
         )
         guard chosen.count >= Self.minimumTracks else { return nil }
         record(chosen, into: &used, &identities)
@@ -277,7 +319,10 @@ final class DailyMixes {
             let random = (try? await appState.client.randomSongs(size: 200, scope: scope)) ?? []
             pool += random.filter { ($0.playCount ?? 0) == 0 }
         }
-        guard !pool.isEmpty else { return nil }
+        guard !pool.isEmpty else {
+            await Diagnostics.shared.record("mixes", "new: no never-played candidates came back")
+            return nil
+        }
 
         var generator = MixEngine.DayRandom(day: day, salt: 3)
         let chosen = MixEngine.choose(
@@ -287,6 +332,9 @@ final class DailyMixes {
             excluding: used,
             usedIdentities: identities,
             using: &generator
+        )
+        await Diagnostics.shared.record(
+            "mixes", "new: \(pool.count) unplayed candidates, \(chosen.count) chosen"
         )
         guard chosen.count >= Self.minimumTracks else { return nil }
         record(chosen, into: &used, &identities)

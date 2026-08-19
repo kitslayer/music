@@ -193,8 +193,10 @@ struct NowPlayingView: View {
     /// gesture stutter. Flattened into one texture, moving it is nearly free.
     private var backdrop: some View {
         ArtworkImage(id: player.currentSong?.coverArt, size: .full, cornerRadius: 0)
-            .aspectRatio(contentMode: .fill)
-            .frame(maxWidth: .infinity)
+            // Fills whatever it is given and crops the rest, which is all a backdrop has
+            // to do. No `aspectRatio`: that asks the art how big it wants to be, and the
+            // answer for a non-square cover is "bigger than this".
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .blur(radius: 60, opaque: true)
             .overlay(.black.opacity(0.45))
             .drawingGroup()

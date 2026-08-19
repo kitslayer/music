@@ -16,21 +16,36 @@ struct ArtworkImage: View {
     @State private var didLoad = false
 
     var body: some View {
-        ZStack {
-            if let image {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                placeholder
+        // `Color.clear` plus an **overlay**, not a `ZStack`, and that distinction is the
+        // whole reason non-square covers used to break the layout.
+        //
+        // `scaledToFill` sizes a view to *cover* what it was offered, so for art that is
+        // not square it reports a size larger than the space it was given -- "My Old Ways"
+        // is 600x542, which came back 10.7% too wide. `.clipped()` only clips the
+        // drawing; it does nothing to the reported size. Anywhere that size was trusted
+        // rather than pinned with an explicit frame -- the player's artwork mode, the
+        // album and playlist headers -- the whole screen grew, so the art looked
+        // zoomed-in and the controls under it were pushed off the bottom.
+        //
+        // `Color.clear` takes exactly the space offered and an overlay is sized by its
+        // parent and can never enlarge it, so this now fills its slot, crops the overflow,
+        // and cannot move anything around it.
+        Color.clear
+            .overlay {
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    placeholder
+                }
             }
-        }
-        .clipped()
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        // Re-reads when a playlist photo is set or cleared, which changes no id.
-        .task(id: "\(id ?? "")|\(playlistID ?? "")|\(playlistArtwork.generation)") {
-            await load()
-        }
+            .clipped()
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            // Re-reads when a playlist photo is set or cleared, which changes no id.
+            .task(id: "\(id ?? "")|\(playlistID ?? "")|\(playlistArtwork.generation)") {
+                await load()
+            }
     }
 
     private var placeholder: some View {

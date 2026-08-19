@@ -62,6 +62,33 @@ struct DiagnosticsView: View {
             }
 
             Section {
+                LabeledContent("Daily Mixes", value: "\(appState.mixes.mixes.count) built")
+                Button {
+                    isRebuildingMixes = true
+                    Task {
+                        appState.mixes.forgetToday()
+                        await appState.mixes.load(appState: appState, scope: appState.scope.scope)
+                        await reload()
+                        isRebuildingMixes = false
+                    }
+                } label: {
+                    if isRebuildingMixes {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            Text("Rebuilding…")
+                        }
+                    } else {
+                        Label("Rebuild Daily Mixes", systemImage: "arrow.clockwise")
+                    }
+                }
+                .disabled(isRebuildingMixes)
+            } footer: {
+                // A mix that cannot be filled is not shown at all, which looks exactly
+                // like a broken feature. This says which stage came up short.
+                Text("Mixes are built once a day. Rebuilding logs how many candidates each one found.")
+            }
+
+            Section {
                 if lines.isEmpty {
                     Text("Nothing has failed.")
                         .foregroundStyle(.secondary)
@@ -115,6 +142,7 @@ struct DiagnosticsView: View {
     }
 
     @State private var exportText = ""
+    @State private var isRebuildingMixes = false
 
     private func label(for kind: ServerOutbox.Kind) -> String {
         switch kind {
