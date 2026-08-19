@@ -47,6 +47,8 @@ struct StatsView: View {
 
     // MARK: - Listening
 
+    // Two sections now, so the builder attribute is required.
+    @ViewBuilder
     private var listeningSection: some View {
         Section {
             Picker("Window", selection: $window) {
