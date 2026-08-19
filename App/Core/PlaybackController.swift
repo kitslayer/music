@@ -101,6 +101,12 @@ final class PlaybackController {
         queueOutput.locate = { [weak self] song in self?.locate(song) }
         engine.locate = { [weak self] song in self?.locate(song) }
 
+        // A mix that is playing keeps growing, so the queue never runs out mid-listen.
+        appState.mixes.onExtended = { [weak self] mix, added in
+            guard let self, queue.sourceDescription == mix.title, !added.isEmpty else { return }
+            append(added)
+        }
+
         // The sample tap goes in **now**, before anything plays, rather than when the
         // visualiser first opens. Attaching it later is a change to a running audio graph
         // -- `audioMix` on a playing item, or a tap on a live mixer -- and that is audible
@@ -483,6 +489,25 @@ final class PlaybackController {
         }
     }
 
+    /// Asks the mix that is playing for more tracks before the queue runs out.
+    ///
+    /// Five tracks of headroom: enough that the extension's requests finish long before
+    /// the music would have stopped, and late enough that a quick listen does not drag
+    /// down a pile of tracks nobody will hear.
+    private func topUpMixQueue() {
+        guard let appState else { return }
+        let remaining = queue.order.count - (queue.position + 1)
+        guard remaining <= 5,
+              let mix = appState.mixes.mixes.first(where: {
+                  $0.title == queue.sourceDescription && $0.isExhausted != true
+              })
+        else { return }
+
+        appState.mixes.extend(
+            mixID: mix.id, appState: appState, scope: appState.scope.scope
+        )
+    }
+
     /// Keeps the preload window topped up without disturbing what is playing.
     private func refillWindow() {
         output.updateUpcoming(queue.upcoming(windowSize - 1))
@@ -575,6 +600,7 @@ final class PlaybackController {
         }
 
         appState?.sleepTimer.trackDidFinish()
+        topUpMixQueue()
         // Played to the end: there is nothing to come back to.
         if let finished = queue.current { appState?.resume.clear(songID: finished.id) }
         resumeNotice = nil

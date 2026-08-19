@@ -10,7 +10,18 @@ struct DailyMixView: View {
 
     let mixID: String
 
+    @Environment(LibraryScopeStore.self) private var scope
+    /// The same setting the shelf uses, so an extension draws from the same libraries.
+    @AppStorage("mixes.folderID") private var mixFolderID = -1
+
     private var mix: DailyMixes.Mix? { appState.mixes.mix(id: mixID) }
+
+    private var mixScope: LibraryScope {
+        guard mixFolderID != -1,
+              let folder = scope.folders.first(where: { $0.id == mixFolderID })
+        else { return .all }
+        return .folder(id: folder.id, name: folder.name)
+    }
 
     var body: some View {
         Group {
@@ -25,6 +36,23 @@ struct DailyMixView: View {
 
                     ForEach(Array(mix.songs.enumerated()), id: \.offset) { index, _ in
                         PlayableSongRow(songs: mix.songs, index: index, source: mix.title)
+                    }
+
+                    // A mix is a station, not a 25-track list: reaching the bottom asks
+                    // for more of the same, and when the recipe's pool is spent it
+                    // carries on as radio seeded from what is already here.
+                    if mix.isExhausted != true {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            Text("Adding more…")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                        .task {
+                            appState.mixes.extend(
+                                mixID: mixID, appState: appState, scope: mixScope
+                            )
+                        }
                     }
                 }
                 .listStyle(.plain)

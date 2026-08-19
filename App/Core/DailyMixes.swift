@@ -25,6 +25,12 @@ final class DailyMixes {
         var title: String
         var subtitle: String
         var songs: [Song]
+        /// Which recipe produced this, so scrolling to the bottom can ask it for more.
+        /// Optional: mixes cached before extending existed have none and fall back to
+        /// radio, which works for any mix.
+        var recipeIndex: Int?
+        /// Set once a mix has stopped producing anything new, so a list can stop asking.
+        var isExhausted: Bool?
 
         /// Up to four covers, for the tiled card. Distinct albums, so a mix that happens
         /// to open with three tracks off one record still looks like a mix.
@@ -70,6 +76,14 @@ final class DailyMixes {
     private var builtDay: Date?
     private var builtScope: String?
     private var buildTask: Task<Void, Never>?
+    private var extendTask: Task<Void, Never>?
+    /// Separate from `isBuilding`: a mix growing at the bottom of its own screen is a
+    /// different thing to say than "the shelf is being built".
+    private(set) var isExtending = false
+
+    /// Called with the tracks an extension added. The player uses it to keep a queue that
+    /// is playing this mix from ever reaching the end.
+    var onExtended: ((Mix, [Song]) -> Void)?
 
     /// Everything a page needs that is worth fetching only once a day.
     private struct Context {
@@ -212,8 +226,10 @@ final class DailyMixes {
                 day: day
             ) else { continue }
 
-            record(mix.songs)
-            mixes.append(mix)
+            var built = mix
+            built.recipeIndex = index
+            record(built.songs)
+            mixes.append(built)
             added += 1
             attempts = 0
         }
@@ -235,6 +251,88 @@ final class DailyMixes {
         builtScope = scopeKey
         await appState.cache.store(
             Stored(day: day, scope: scopeKey, mixes: mixes, nextRecipe: nextRecipe), for: key
+        )
+    }
+
+    /// Adds another batch of tracks to a mix that is already on screen.
+    ///
+    /// This is what makes a mix worth sitting in: Heavy Rotation is not a 25-track list,
+    /// it is a station. The recipe that produced it is asked for more first — it excludes
+    /// everything already used, so a second run genuinely returns different tracks — and
+    /// when the recipe's own pool runs dry it continues as radio, seeded from the tracks
+    /// already in the mix. That part cannot run out.
+    func extend(mixID: String, appState: AppState, scope: LibraryScope) {
+        guard let position = mixes.firstIndex(where: { $0.id == mixID }),
+              mixes[position].isExhausted != true,
+              extendTask == nil
+        else { return }
+
+        extendTask = Task { [weak self] in
+            await self?.runExtension(at: position, appState: appState, scope: scope)
+            self?.extendTask = nil
+        }
+    }
+
+    private func runExtension(at position: Int, appState: AppState, scope: LibraryScope) async {
+        guard mixes.indices.contains(position) else { return }
+        let mix = mixes[position]
+        let before = mix.songs.count
+        isExtending = true
+        defer { isExtending = false }
+
+        var addition: [Song] = []
+
+        // The generator keys on the *day*, so extending within the same day would shuffle
+        // identically. Nudging the seed forward one notional day per batch gives each
+        // extension its own order while keeping the whole thing reproducible.
+        let seedDay = Calendar.current.date(
+            byAdding: .day, value: before / 25, to: builtDay ?? .now
+        ) ?? .now
+
+        // More of the same, if the recipe can still find any.
+        if let index = mix.recipeIndex, let context {
+            if let more = await build(
+                Self.recipe(at: index), index: index, appState: appState,
+                context: context, scope: scope, day: seedDay
+            ) {
+                addition = more.songs
+            }
+        }
+
+        // Then radio, which is what a station does when the obvious material is spent.
+        if addition.count < 10, let seed = mix.songs.suffix(8).randomElement() {
+            let radio = await appState.radio.mix(seed: seed, scope: scope, size: 60)
+            var generator = MixEngine.DayRandom(day: .now, salt: UInt64(before))
+            addition += MixEngine.choose(
+                from: radio.filter { $0.id != seed.id },
+                limit: 25 - addition.count,
+                perArtist: 3,
+                excluding: used,
+                usedIdentities: identities,
+                using: &generator
+            )
+        }
+
+        guard !addition.isEmpty else {
+            mixes[position].isExhausted = true
+            await Diagnostics.shared.record("mixes", "“\(mix.title)” had nothing more to add")
+            return
+        }
+
+        record(addition)
+        mixes[position].songs += addition
+        onExtended?(mixes[position], addition)
+        await Diagnostics.shared.record(
+            "mixes", "“\(mix.title)” grew from \(before) to \(mixes[position].songs.count)"
+        )
+        await persist(appState: appState, scope: scope)
+    }
+
+    private func persist(appState: AppState, scope: LibraryScope) async {
+        guard let day = builtDay else { return }
+        await appState.cache.store(
+            Stored(day: day, scope: scope.cacheKey, mixes: mixes, nextRecipe: nextRecipe),
+            for: "daily-mixes-\(scope.cacheKey)"
         )
     }
 
