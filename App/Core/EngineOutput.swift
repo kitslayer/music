@@ -81,18 +81,32 @@ final class EngineOutput: AudioOutput {
     /// Cheap here: the engine already has the samples in a tappable graph, so this is
     /// one block on the mixer rather than the C tap the streaming output needs.
     func setSpectrumSink(_ buffer: AudioSampleBuffer?) {
-        // Installed once and left alone: removing and reinstalling a tap on a running
-        // engine is audible, which is what made switching player modes click.
+        // Installed once and left alone: removing and reinstalling a tap on a *running*
+        // engine is audible, which is what made switching player modes click. Set from
+        // `PlaybackController.attach`, before anything plays, so the install itself is
+        // silent too.
         guard let buffer, spectrum == nil else { return }
         spectrum = buffer
+        installSpectrumTap()
+    }
+
+    /// (Re)installs the tap for the graph's current format.
+    ///
+    /// Called again from `connectGraph`, because reconnecting the mixer changes the format
+    /// on this bus and a tap installed for the old rate is a crash waiting for a headphone
+    /// plug. Only ever runs while the engine is stopped, so it makes no sound.
+    private func installSpectrumTap() {
+        guard let spectrum else { return }
 
         let format = mixer.outputFormat(forBus: 0)
-        buffer.sampleRate = format.sampleRate
+        guard format.sampleRate > 0 else { return }
+        spectrum.sampleRate = format.sampleRate
 
+        mixer.removeTap(onBus: 0)
         mixer.installTap(onBus: 0, bufferSize: 1024, format: format) { audioBuffer, _ in
             // Audio thread. One channel, one copy, nothing else.
             guard let channel = audioBuffer.floatChannelData?[0] else { return }
-            buffer.write(channel, count: Int(audioBuffer.frameLength))
+            spectrum.write(channel, count: Int(audioBuffer.frameLength))
         }
     }
 
@@ -143,6 +157,8 @@ final class EngineOutput: AudioOutput {
         for (index, player) in players.enumerated() {
             engine.connect(player, to: mixer, fromBus: 0, toBus: index, format: nil)
         }
+
+        installSpectrumTap()
     }
 
     /// Called on every settings change; safe while running, which is what makes the

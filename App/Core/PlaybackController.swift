@@ -100,6 +100,19 @@ final class PlaybackController {
 
         queueOutput.locate = { [weak self] song in self?.locate(song) }
         engine.locate = { [weak self] song in self?.locate(song) }
+
+        // The sample tap goes in **now**, before anything plays, rather than when the
+        // visualiser first opens. Attaching it later is a change to a running audio graph
+        // -- `audioMix` on a playing item, or a tap on a live mixer -- and that is audible
+        // exactly once, on the first switch to the visualiser. Nothing else can attach it
+        // at a quiet moment, because there is no quiet moment after playback starts.
+        //
+        // The cost of leaving it in from the start is one `memcpy` per buffer on a thread
+        // that is already copying audio. The expensive half is the FFT, and that still
+        // only runs while a visualiser is on screen.
+        spectrumSink = appState.spectrumBuffer
+        queueOutput.setSpectrumSink(spectrumSink)
+        engine.setSpectrumSink(spectrumSink)
     }
 
     /// Both outputs are wired up front rather than on switch: a callback arriving from
@@ -170,9 +183,10 @@ final class PlaybackController {
 
     // MARK: - Visualiser
 
-    /// There is deliberately no `stopSpectrum`. Detaching the tap means changing the
-    /// audio graph while it is running, which is audible, so once attached it stays --
-    /// the analyser stopping is what makes it free.
+    /// There is deliberately no `stopSpectrum`, and no work here on the common path: the
+    /// tap is attached in `attach(appState:)` before any audio exists. This only covers
+    /// the case of an output built before that ran, and is a no-op otherwise — the outputs
+    /// ignore a second sink.
     func startSpectrum() {
         guard let appState else { return }
         spectrumSink = appState.spectrumBuffer
@@ -442,7 +456,6 @@ final class PlaybackController {
 
         let wanted = desiredOutput(for: window)
         if wanted !== output {
-            output.setSpectrumSink(nil)
             output.stop()
             output = wanted
             // The visualiser must follow the switch, or opening it on a streamed track

@@ -43,6 +43,11 @@ final class DailyMixes {
 
     private var builtDay: Date?
     private var builtScope: String?
+    private var buildTask: Task<Void, Never>?
+    /// Attempts today, so a library that genuinely cannot fill more than one mix does not
+    /// get rebuilt on every visit to Home.
+    private var attemptsToday = 0
+    private var attemptDay: Date?
 
     private struct Stored: Codable, Sendable {
         var day: Date
@@ -55,34 +60,72 @@ final class DailyMixes {
     /// Throws away today's answer so the next `load` rebuilds. Used by the Diagnostics
     /// screen, since "why is this shelf empty" is otherwise unanswerable from the phone.
     func forgetToday() {
+        buildTask?.cancel()
+        buildTask = nil
         builtDay = nil
         builtScope = nil
+        attemptsToday = 0
         mixes = []
     }
 
     /// Restores today's mixes from disk, or builds them.
     ///
+    /// **Not** `async`, and the work runs in a task this object owns. It used to be awaited
+    /// straight from Home's `.task`, which SwiftUI cancels the moment that view goes away —
+    /// so opening a mix, or switching tabs, killed the build part-way through. The first
+    /// stage had already finished, so what got cached for the day was Heavy Rotation and
+    /// nothing else. An unstructured `Task` does not inherit that cancellation.
+    ///
     /// Yesterday's are shown while today's are being built, and kept if the build fails —
     /// offline, stale mixes are worth far more than an empty shelf, and every track in them
     /// is playable if it was downloaded.
-    func load(appState: AppState, scope: LibraryScope) async {
+    func load(appState: AppState, scope: LibraryScope) {
         let today = Calendar.current.startOfDay(for: .now)
+        if builtDay == today, builtScope == scope.cacheKey, !mixes.isEmpty { return }
+        guard buildTask == nil else { return }
+
+        buildTask = Task { [weak self] in
+            await self?.restoreThenBuild(appState: appState, scope: scope, day: today)
+            self?.buildTask = nil
+        }
+    }
+
+    /// Waits for whatever build is in flight. For the Diagnostics button, which wants to
+    /// show the outcome rather than start it and walk away.
+    func loadAndWait(appState: AppState, scope: LibraryScope) async {
+        load(appState: appState, scope: scope)
+        await buildTask?.value
+    }
+
+    private func restoreThenBuild(appState: AppState, scope: LibraryScope, day today: Date) async {
         let scopeKey = scope.cacheKey
-
-        if builtDay == today, builtScope == scopeKey, !mixes.isEmpty { return }
-
         let key = "daily-mixes-\(scopeKey)"
+
         if mixes.isEmpty, let stored: Stored = await appState.cache.load(Stored.self, for: key) {
             mixes = stored.mixes
             builtDay = stored.day
             builtScope = stored.scope
-            if stored.day == today, stored.scope == scopeKey { return }
+            // A stored day with a full set is done. A short set is worth one more go, in
+            // case it was a build that got cut off.
+            if stored.day == today, stored.scope == scopeKey, stored.mixes.count >= 3 { return }
         }
 
-        guard !isBuilding else { return }
+        if attemptDay != today {
+            attemptDay = today
+            attemptsToday = 0
+        }
+        guard attemptsToday < 3, !isBuilding else { return }
+        attemptsToday += 1
+
         isBuilding = true
         let built = await build(appState: appState, scope: scope, day: today)
         isBuilding = false
+
+        guard built.count >= mixes.count || builtDay != today else {
+            // A retry that did worse than what is already on screen changes nothing.
+            await Diagnostics.shared.record("mixes", "rebuild produced fewer — keeping what was there")
+            return
+        }
 
         guard !built.isEmpty else {
             // Logged because the failure is invisible otherwise: an empty shelf simply
@@ -129,11 +172,25 @@ final class DailyMixes {
         )
         if let heavy { built.append(heavy) }
 
-        if let genre = await topGenre(appState: appState, samples: samples, candidates: candidates, scope: scope),
-           let mix = await genreMix(
-               appState: appState, genre: genre, scope: scope, day: day,
-               used: &used, identities: &identities
-           ) {
+        // Two genres, not one: with one, the shelf was Heavy Rotation and a single
+        // near-neighbour of it. The second genre is usually a different mood entirely,
+        // which is the point of a shelf rather than a button.
+        let genres = await topGenres(
+            appState: appState, samples: samples, candidates: candidates, scope: scope, limit: 2
+        )
+        for (index, genre) in genres.enumerated() {
+            if let mix = await genreMix(
+                appState: appState, genre: genre, index: index, scope: scope, day: day,
+                used: &used, identities: &identities
+            ) {
+                built.append(mix)
+            }
+        }
+
+        if let mix = await deepCuts(
+            appState: appState, artists: artists, scope: scope, day: day,
+            used: &used, identities: &identities
+        ) {
             built.append(mix)
         }
 
@@ -144,7 +201,98 @@ final class DailyMixes {
             built.append(mix)
         }
 
+        if let mix = await freshAdditions(
+            appState: appState, scope: scope, day: day,
+            used: &used, identities: &identities
+        ) {
+            built.append(mix)
+        }
+
         return built
+    }
+
+    /// Tracks by favourite artists that have never once been played.
+    ///
+    /// Different from New to You, which reaches for anything unplayed: this stays with
+    /// artists already loved and finds the album tracks behind the songs. `getTopSongs`
+    /// cannot answer it — by definition it returns the *played* ones — so this searches by
+    /// artist name and filters on the play count.
+    private func deepCuts(
+        appState: AppState,
+        artists: [String],
+        scope: LibraryScope,
+        day: Date,
+        used: inout Set<String>,
+        identities: inout Set<String>
+    ) async -> Mix? {
+        var pool: [Song] = []
+        for artist in artists.prefix(4) {
+            let found = try? await appState.client.search(
+                query: artist, artistCount: 0, albumCount: 0, songCount: 60, scope: scope
+            )
+            pool += (found?.songs ?? []).filter {
+                ($0.playCount ?? 0) == 0
+                    && $0.artist?.localizedCaseInsensitiveContains(artist) == true
+            }
+        }
+        guard !pool.isEmpty else { return nil }
+
+        var generator = MixEngine.DayRandom(day: day, salt: 4)
+        let chosen = MixEngine.choose(
+            from: pool, limit: 25, perArtist: 4,
+            excluding: used, usedIdentities: identities, using: &generator
+        )
+        await Diagnostics.shared.record(
+            "mixes", "deep cuts: \(pool.count) candidates, \(chosen.count) chosen"
+        )
+        guard chosen.count >= Self.minimumTracks else { return nil }
+        record(chosen, into: &used, &identities)
+
+        return Mix(
+            id: "deep",
+            title: "Deep Cuts",
+            subtitle: "Unplayed, by artists you know",
+            songs: chosen
+        )
+    }
+
+    /// Newly added music that has not been touched yet.
+    ///
+    /// Whole albums are the unit here because new arrivals are usually albums — often ones
+    /// Hermes just fetched — and hearing one in order is the point.
+    private func freshAdditions(
+        appState: AppState,
+        scope: LibraryScope,
+        day: Date,
+        used: inout Set<String>,
+        identities: inout Set<String>
+    ) async -> Mix? {
+        let albums = (try? await appState.client.albums(type: .newest, size: 10, scope: scope)) ?? []
+        var pool: [Song] = []
+
+        for album in albums.prefix(6) {
+            guard let detail = try? await appState.client.albumDetail(id: album.id) else { continue }
+            pool += detail.songs.filter { ($0.playCount ?? 0) == 0 }
+        }
+        guard !pool.isEmpty else { return nil }
+
+        var generator = MixEngine.DayRandom(day: day, salt: 5)
+        let chosen = MixEngine.choose(
+            from: pool, limit: 25, perArtist: 6,
+            excluding: used, usedIdentities: identities, using: &generator
+        )
+        await Diagnostics.shared.record(
+            "mixes", "fresh: \(albums.count) new albums, \(pool.count) unplayed, \(chosen.count) chosen"
+        )
+        guard chosen.count >= Self.minimumTracks else { return nil }
+        record(chosen, into: &used, &identities)
+
+        return Mix(
+            id: "fresh",
+            title: "Fresh Additions",
+            subtitle: "Recently added, not yet played",
+            songs: chosen
+        )
     }
 
     /// The play log, or the server's counts when the log is too thin to mean anything.
@@ -229,16 +377,16 @@ final class DailyMixes {
         ), candidates)
     }
 
-    /// The genre someone actually listens to, not the biggest one in the library.
-    private func topGenre(
+    /// The genres someone actually listens to, not the biggest ones in the library.
+    private func topGenres(
         appState: AppState,
         samples: [MixEngine.Sample],
         candidates: [Song],
-        scope: LibraryScope
-    ) async -> String? {
-        if let top = MixEngine.ranked(MixEngine.genreScores(samples), limit: 1).first {
-            return top
-        }
+        scope: LibraryScope,
+        limit: Int
+    ) async -> [String] {
+        let scored = MixEngine.ranked(MixEngine.genreScores(samples), limit: limit)
+        if !scored.isEmpty { return scored }
 
         // Cold start: the play log has no genres yet, but the tracks by favourite artists
         // do, so the most common genre among those is still a personal answer and costs
@@ -247,18 +395,24 @@ final class DailyMixes {
         for genre in candidates.compactMap(\.genre) where !genre.isEmpty {
             counts[genre, default: 0] += 1
         }
-        if let top = counts.sorted(by: { ($0.value, $1.key) > ($1.value, $0.key) }).first?.key {
-            return top
-        }
+        let fromCandidates = counts
+            .sorted { ($0.value, $1.key) > ($1.value, $0.key) }
+            .prefix(limit)
+            .map(\.key)
+        if !fromCandidates.isEmpty { return fromCandidates }
 
-        // Nothing at all to go on: the library's own biggest genre.
+        // Nothing at all to go on: the library's own biggest genres.
         let genres = (try? await appState.client.genres(scope: scope)) ?? []
-        return genres.max { ($0.songCount ?? 0) < ($1.songCount ?? 0) }?.value
+        return genres
+            .sorted { ($0.songCount ?? 0) > ($1.songCount ?? 0) }
+            .prefix(limit)
+            .map(\.value)
     }
 
     private func genreMix(
         appState: AppState,
         genre: String,
+        index: Int,
         scope: LibraryScope,
         day: Date,
         used: inout Set<String>,
@@ -270,7 +424,7 @@ final class DailyMixes {
             return nil
         }
 
-        var generator = MixEngine.DayRandom(day: day, salt: 2)
+        var generator = MixEngine.DayRandom(day: day, salt: UInt64(2 + index * 100))
         let chosen = MixEngine.choose(
             from: pool,
             limit: 25,
@@ -287,7 +441,7 @@ final class DailyMixes {
 
         // Named for the genre, because "Shoegaze Mix" says something and "Mix 2" does not.
         return Mix(
-            id: "genre",
+            id: "genre-\(index)",
             title: "\(genre) Mix",
             subtitle: "From your \(genre.lowercased()) corner",
             songs: chosen

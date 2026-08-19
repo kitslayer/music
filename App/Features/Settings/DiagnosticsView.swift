@@ -67,7 +67,7 @@ struct DiagnosticsView: View {
                     isRebuildingMixes = true
                     Task {
                         appState.mixes.forgetToday()
-                        await appState.mixes.load(appState: appState, scope: appState.scope.scope)
+                        await appState.mixes.loadAndWait(appState: appState, scope: appState.scope.scope)
                         await reload()
                         isRebuildingMixes = false
                     }

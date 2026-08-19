@@ -66,7 +66,7 @@ struct HomeView: View {
             // and only once a day, so it must not hold up the rest of Home or be redone
             // by every pull-to-refresh.
             .task(id: scope.generation) {
-                await appState.mixes.load(appState: appState, scope: scope.scope)
+                appState.mixes.load(appState: appState, scope: scope.scope)
             }
         }
     }
