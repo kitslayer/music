@@ -65,6 +65,7 @@ struct NowPlayingView: View {
                         .padding(.top, 6)
                 }
 
+                resumeStrip
                 PlayerSeekBar()
                 transport
                 volumeRow
@@ -342,6 +343,40 @@ struct NowPlayingView: View {
         return value == value.rounded()
             ? String(Int(value))
             : String(format: "%.1f", value)
+    }
+
+    /// Shown for a few seconds when playback started part-way through a long track.
+    ///
+    /// A silent auto-seek with no way back is the failure mode this exists to avoid: the
+    /// strip says where it resumed from and offers the undo, then gets out of the way.
+    @ViewBuilder
+    private var resumeStrip: some View {
+        if let notice = appState.player.resumeNotice,
+           notice.songID == appState.player.currentSong?.id {
+            HStack(spacing: 10) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.caption)
+                Text("Resumed from \(Int(notice.seconds).asDuration)")
+                    .font(.caption)
+                Button("Start over") {
+                    appState.player.startOver()
+                }
+                .font(.caption.weight(.semibold))
+            }
+            .foregroundStyle(.white.opacity(0.85))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(.ultraThinMaterial, in: Capsule())
+            .padding(.top, 8)
+            .transition(.opacity)
+            .task(id: notice) {
+                try? await Task.sleep(for: .seconds(8))
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeOut(duration: 0.3)) {
+                    appState.player.resumeNotice = nil
+                }
+            }
+        }
     }
 
     private var transport: some View {

@@ -109,6 +109,47 @@ struct DownloadCatalog: Codable, Sendable {
         entries.values.reduce(0) { $0 + $1.byteCount }
     }
 
+    /// The albums represented by what is downloaded, newest addition first.
+    ///
+    /// Reconstructed from the catalog rather than filtered out of a server page. Filtering
+    /// a 100-album page down to the handful that are downloaded can easily yield zero
+    /// rows, which stalls a sentinel-paged list on an empty screen forever — the list
+    /// never asks for page two because nothing came into view.
+    var downloadedAlbums: [Album] {
+        var byAlbum: [String: (album: Album, addedAt: Date, count: Int)] = [:]
+
+        for entry in entries.values {
+            let song = entry.song
+            let id = song.albumId ?? "album-\(song.album ?? song.id)"
+            if var existing = byAlbum[id] {
+                existing.count += 1
+                existing.addedAt = max(existing.addedAt, entry.addedAt)
+                byAlbum[id] = existing
+            } else {
+                byAlbum[id] = (
+                    Album(
+                        id: id,
+                        name: song.album ?? "Unknown Album",
+                        artist: song.artist,
+                        coverArt: song.coverArt,
+                        songCount: 1,
+                        year: song.year
+                    ),
+                    entry.addedAt,
+                    1
+                )
+            }
+        }
+
+        return byAlbum.values
+            .sorted { $0.addedAt > $1.addedAt }
+            .map { item in
+                var album = item.album
+                album.songCount = item.count
+                return album
+            }
+    }
+
     /// Bytes per second of audio, measured from what is actually on this phone.
     ///
     /// Projections used to assume 1 MB/s, which is right for 16-bit 44.1 kHz FLAC and

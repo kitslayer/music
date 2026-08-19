@@ -18,6 +18,8 @@ actor ServerOutbox {
         case star
         case unstar
         case rating
+        /// A resume position for a long track. `positionMs` carries it.
+        case bookmark
     }
 
     struct Pending: Codable, Sendable {
@@ -36,6 +38,10 @@ actor ServerOutbox {
         var target: String?
         /// `rating` only.
         var rating: Int?
+        /// `bookmark` only: milliseconds into the track. Optional for the same reason
+        /// everything else here is — files written before bookmarks existed have no such
+        /// key, and `flush` deletes what it cannot decode.
+        var positionMs: Int?
         /// Same reasoning as `kind_`, though this one has been present since the start.
         private var attempts_: Int?
 
@@ -52,6 +58,7 @@ actor ServerOutbox {
             case listenedAt
             case target
             case rating
+            case positionMs
             case attempts_ = "attempts"
         }
 
@@ -60,13 +67,15 @@ actor ServerOutbox {
             songID: String,
             listenedAt: Date,
             target: String? = nil,
-            rating: Int? = nil
+            rating: Int? = nil,
+            positionMs: Int? = nil
         ) {
             kind_ = kind
             self.songID = songID
             self.listenedAt = listenedAt
             self.target = target
             self.rating = rating
+            self.positionMs = positionMs
             attempts_ = 0
         }
     }
@@ -111,6 +120,14 @@ actor ServerOutbox {
 
     func enqueueRating(id: String, rating: Int) {
         write(Pending(kind: .rating, songID: id, listenedAt: .now, rating: rating))
+    }
+
+    /// A resume position that could not be saved now. `nil` position means "forget where
+    /// I was", which is what finishing a track does.
+    func enqueueBookmark(id: String, positionMilliseconds: Int?) {
+        write(Pending(
+            kind: .bookmark, songID: id, listenedAt: .now, positionMs: positionMilliseconds
+        ))
     }
 
     private func write(_ pending: Pending) {
@@ -170,6 +187,12 @@ actor ServerOutbox {
             try await client.unstar(id: pending.songID, kind: starKind(pending.target))
         case .rating:
             try await client.setRating(id: pending.songID, rating: pending.rating ?? 0)
+        case .bookmark:
+            if let position = pending.positionMs {
+                try await client.createBookmark(id: pending.songID, positionMilliseconds: position)
+            } else {
+                try await client.deleteBookmark(id: pending.songID)
+            }
         }
     }
 

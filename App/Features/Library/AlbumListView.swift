@@ -3,6 +3,9 @@ import SwiftUI
 struct AlbumListView: View {
     @Environment(AppState.self) private var appState
     @Environment(LibraryScopeStore.self) private var scope
+    @Environment(DownloadCenter.self) private var downloads
+
+    @AppStorage("library.downloadedOnly") private var downloadedOnly = false
 
     var initialSort: AlbumSort = .newest
     /// Set when this list is a genre drill-down.
@@ -39,7 +42,7 @@ struct AlbumListView: View {
                 .padding(.top, 60)
             } else {
                 LazyVGrid(columns: columns, spacing: 20) {
-                    ForEach(albums) { album in
+                    ForEach(displayed) { album in
                         NavigationLink(value: Destination.album(AlbumRef(album))) {
                             AlbumCard(album: album)
                         }
@@ -52,7 +55,9 @@ struct AlbumListView: View {
                 // A sentinel rather than scroll-offset maths: `.task` on a lazily
                 // created view is cancellation-correct and fires exactly when the
                 // user reaches the end.
-                if canLoadMore, !albums.isEmpty {
+                // Never paged while filtering to downloads: the list is the catalog, and
+                // it is already whole.
+                if canLoadMore, !albums.isEmpty, !isFilteringToDownloads {
                     ProgressView()
                         .padding(.vertical, 24)
                         .task { await loadMore() }
@@ -69,6 +74,11 @@ struct AlbumListView: View {
                                 Text(option.title).tag(option)
                             }
                         }
+                        Divider()
+                        Toggle("Downloaded Only", isOn: $downloadedOnly)
+                            // Offline it is not a choice: the server cannot answer, so
+                            // this turns "empty lists" into "your library, smaller".
+                            .disabled(!appState.reachability.isOnline)
                     } label: {
                         // Show the current sort as text: a bare glyph hides state.
                         Label(sort.title, systemImage: "arrow.up.arrow.down")
@@ -78,7 +88,16 @@ struct AlbumListView: View {
             }
         }
         .overlay {
-            if isLoadingPage, albums.isEmpty { ProgressView() }
+            if isLoadingPage, albums.isEmpty, !isFilteringToDownloads { ProgressView() }
+        }
+        .overlay {
+            if isFilteringToDownloads, displayed.isEmpty {
+                ContentUnavailableView(
+                    "Nothing Downloaded",
+                    systemImage: "arrow.down.circle",
+                    description: Text("Albums you download appear here, and play with no server at all.")
+                )
+            }
         }
         .refreshable { await reload() }
         .task(id: LoadKey(sort: sort, scope: scope.generation, genre: genre, decade: decade)) {
@@ -88,6 +107,19 @@ struct AlbumListView: View {
             }
             await reload()
         }
+    }
+
+    /// Forced on when there is no server, because then it is simply the truth.
+    private var isFilteringToDownloads: Bool {
+        downloadedOnly || !appState.reachability.isOnline
+    }
+
+    private var displayed: [Album] {
+        guard isFilteringToDownloads else { return albums }
+
+        let downloaded = downloads.catalog.downloadedAlbums
+        guard let genre else { return downloaded }
+        return downloaded.filter { $0.genre?.caseInsensitiveCompare(genre) == .orderedSame }
     }
 
     private struct LoadKey: Equatable {

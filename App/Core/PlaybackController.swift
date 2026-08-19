@@ -24,6 +24,15 @@ final class PlaybackController {
     private(set) var isBuffering = false
     /// Seconds. Read by the in-app scrubber at 4 Hz.
     private(set) var elapsed: Double = 0
+    /// Set when playback started somewhere other than the beginning because a resume
+    /// position was known. Drives the "Resumed from 42:10 · Start over" strip, which is
+    /// the whole difference between a helpful resume and a baffling one.
+    var resumeNotice: ResumeNotice?
+
+    struct ResumeNotice: Equatable, Sendable {
+        let songID: String
+        let seconds: Double
+    }
     private(set) var duration: Double = 0
 
     var currentSong: Song? { queue.current }
@@ -204,7 +213,25 @@ final class PlaybackController {
             repeatMode: queue.repeatMode
         )
 
-        rebuildOutput(startPlaying: true, seekTo: seconds)
+        // A saved position only applies when the caller did not ask for one, and only to
+        // tracks long enough for it to matter -- `ResumeStore` decides both.
+        var startSeconds = seconds
+        if seconds == 0, let current = queue.current,
+           let resume = appState?.resume.resumePoint(for: current) {
+            startSeconds = resume
+            resumeNotice = ResumeNotice(songID: current.id, seconds: resume)
+        } else {
+            resumeNotice = nil
+        }
+
+        rebuildOutput(startPlaying: true, seekTo: startSeconds)
+    }
+
+    /// Discards the resume position and starts the current track again.
+    func startOver() {
+        if let song = queue.current { appState?.resume.clear(songID: song.id) }
+        resumeNotice = nil
+        seek(to: 0)
     }
 
     func playNext(_ songs: [Song]) {
@@ -245,6 +272,9 @@ final class PlaybackController {
         output.pause()
         isPlaying = false
         tracker.interrupted(at: elapsed)
+        // Pausing is when someone walks away, which is exactly what a resume position is
+        // for. Track changes and finishing are handled where they happen.
+        appState?.resume.note(song: queue.current, elapsed: elapsed)
         session.noteIsPlaying(false)
         publishNowPlaying(force: true)
         persist()
@@ -507,6 +537,9 @@ final class PlaybackController {
         }
 
         appState?.sleepTimer.trackDidFinish()
+        // Played to the end: there is nothing to come back to.
+        if let finished = queue.current { appState?.resume.clear(songID: finished.id) }
+        resumeNotice = nil
 
         queue.position = orderIndex
         duration = output.duration > 0 ? output.duration : Double(queue.current?.duration ?? 0)

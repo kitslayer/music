@@ -35,6 +35,7 @@ final class AppState {
     let mixes = DailyMixes()
     let hermes = HermesAsk()
     let recentSearches = RecentSearches()
+    let resume = ResumeStore()
     let native = NavidromeClient()
     let downloads = DownloadCenter()
     let reachability = Reachability()
@@ -54,6 +55,7 @@ final class AppState {
         // background download session can be relaunched into.
         Paths.bootstrap()
         userState.configure(client: client, outbox: outbox)
+        resume.configure(client: client, outbox: outbox)
         playlistStore.configure(client: client, appState: self)
         requests.configure(client: client)
         hermes.configure(requests: requests)
@@ -106,6 +108,7 @@ final class AppState {
 
         // Both are cheap when there is nothing to do, and both want to happen once the
         // credentials are known rather than at construction.
+        await resume.refresh()
         await queueSync.check(localSavedAt: player.lastSavedAt)
         await playlistSync.sync()
         await loadServerContext()
