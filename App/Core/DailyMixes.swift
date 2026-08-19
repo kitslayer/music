@@ -56,6 +56,11 @@ final class DailyMixes {
     /// being a recommendation.
     static let maximumMixes = 40
 
+    /// Tracks added each time a mix is extended. Fifty rather than twenty-five: the wait
+    /// is dominated by the round trips, not the size of the answer, so a bigger batch
+    /// means far fewer waits for the same work.
+    private static let extensionSize = 50
+
     /// How many the first page builds. Enough for the shelf to look deliberate before
     /// anyone scrolls.
     private static let firstPageSize = 4
@@ -280,35 +285,34 @@ final class DailyMixes {
         isExtending = true
         defer { isExtending = false }
 
-        var addition: [Song] = []
-
         // The generator keys on the *day*, so extending within the same day would shuffle
         // identically. Nudging the seed forward one notional day per batch gives each
         // extension its own order while keeping the whole thing reproducible.
         let seedDay = Calendar.current.date(
-            byAdding: .day, value: before / 25, to: builtDay ?? .now
+            byAdding: .day, value: before / Self.extensionSize, to: builtDay ?? .now
         ) ?? .now
+        let seed = mix.songs.suffix(8).randomElement()
 
-        // More of the same, if the recipe can still find any.
-        if let index = mix.recipeIndex, let context {
-            if let more = await build(
-                Self.recipe(at: index), index: index, appState: appState,
-                context: context, scope: scope, day: seedDay
-            ) {
-                addition = more.songs
-            }
-        }
+        // Both sources are started **together**, not one after the other. Sequentially
+        // this waited for the recipe -- up to nine requests for a decade mix -- decided it
+        // was short, and only then went to the radio for another two. Concurrently the
+        // whole extension costs the slower of the two rather than their sum.
+        async let fromRecipe = recipeExtension(
+            mix: mix, appState: appState, scope: scope, day: seedDay
+        )
+        async let fromRadio = radioExtension(seed: seed, appState: appState, scope: scope)
 
-        // Then radio, which is what a station does when the obvious material is spent.
-        if addition.count < 10, let seed = mix.songs.suffix(8).randomElement() {
-            let radio = await appState.radio.mix(seed: seed, scope: scope, size: 60)
-            var generator = MixEngine.DayRandom(day: .now, salt: UInt64(before))
+        var addition = await fromRecipe
+        let radio = await fromRadio
+
+        if addition.count < Self.extensionSize, !radio.isEmpty {
+            var generator = MixEngine.DayRandom(day: seedDay, salt: UInt64(before))
             addition += MixEngine.choose(
-                from: radio.filter { $0.id != seed.id },
-                limit: 25 - addition.count,
+                from: radio.filter { $0.id != seed?.id },
+                limit: Self.extensionSize - addition.count,
                 perArtist: 3,
-                excluding: used,
-                usedIdentities: identities,
+                excluding: used.union(addition.map(\.id)),
+                usedIdentities: identities.union(addition.map(MixEngine.identity)),
                 using: &generator
             )
         }
@@ -326,6 +330,29 @@ final class DailyMixes {
             "mixes", "“\(mix.title)” grew from \(before) to \(mixes[position].songs.count)"
         )
         await persist(appState: appState, scope: scope)
+    }
+
+    private func recipeExtension(
+        mix: Mix,
+        appState: AppState,
+        scope: LibraryScope,
+        day: Date
+    ) async -> [Song] {
+        guard let index = mix.recipeIndex, let context else { return [] }
+        let built = await build(
+            Self.recipe(at: index), index: index, appState: appState,
+            context: context, scope: scope, day: day
+        )
+        return built?.songs ?? []
+    }
+
+    private func radioExtension(
+        seed: Song?,
+        appState: AppState,
+        scope: LibraryScope
+    ) async -> [Song] {
+        guard let seed else { return [] }
+        return await appState.radio.mix(seed: seed, scope: scope, size: 80)
     }
 
     private func persist(appState: AppState, scope: LibraryScope) async {
@@ -487,14 +514,19 @@ final class DailyMixes {
         identities: Set<String>
     ) async -> Mix? {
         var pool: [Song] = []
-        for artist in artists.prefix(4) {
-            let found = try? await appState.client.search(
-                query: artist, artistCount: 0, albumCount: 0, songCount: 60, scope: scope
-            )
-            pool += (found?.songs ?? []).filter {
-                ($0.playCount ?? 0) == 0
-                    && $0.artist?.localizedCaseInsensitiveContains(artist) == true
+        await withTaskGroup(of: [Song].self) { group in
+            for artist in artists.prefix(4) {
+                group.addTask { [client = appState.client] in
+                    let found = try? await client.search(
+                        query: artist, artistCount: 0, albumCount: 0, songCount: 60, scope: scope
+                    )
+                    return (found?.songs ?? []).filter {
+                        ($0.playCount ?? 0) == 0
+                            && $0.artist?.localizedCaseInsensitiveContains(artist) == true
+                    }
+                }
             }
+            for await songs in group { pool += songs }
         }
         guard !pool.isEmpty else { return nil }
 
@@ -576,9 +608,16 @@ final class DailyMixes {
 
         var generator = MixEngine.DayRandom(day: day, salt: UInt64(600 + index))
         var pool: [Song] = []
-        for album in albums.shuffled(using: &generator).prefix(8) {
-            guard let detail = try? await appState.client.albumDetail(id: album.id) else { continue }
-            pool += detail.songs
+        let chosenAlbums = albums.shuffled(using: &generator).prefix(8)
+        await withTaskGroup(of: [Song].self) { group in
+            for album in chosenAlbums {
+                group.addTask { [client = appState.client] in
+                    (try? await client.albumDetail(id: album.id))?.songs ?? []
+                }
+            }
+            for await songs in group {
+                pool += songs
+            }
         }
         guard !pool.isEmpty else { return nil }
 
@@ -611,11 +650,18 @@ final class DailyMixes {
         identities: Set<String>
     ) async -> Mix? {
         let albums = (try? await appState.client.albums(type: .newest, size: 10, scope: scope)) ?? []
+        // Concurrently: six sequential album fetches was most of the wait on this recipe,
+        // and they do not depend on each other.
         var pool: [Song] = []
-
-        for album in albums.prefix(6) {
-            guard let detail = try? await appState.client.albumDetail(id: album.id) else { continue }
-            pool += detail.songs.filter { ($0.playCount ?? 0) == 0 }
+        await withTaskGroup(of: [Song].self) { group in
+            for album in albums.prefix(6) {
+                group.addTask { [client = appState.client] in
+                    (try? await client.albumDetail(id: album.id))?.songs ?? []
+                }
+            }
+            for await songs in group {
+                pool += songs.filter { ($0.playCount ?? 0) == 0 }
+            }
         }
         guard !pool.isEmpty else { return nil }
 
@@ -670,15 +716,23 @@ final class DailyMixes {
     /// genre ranking reads their tags and every later page would otherwise re-fetch them.
     private func artistCandidates(appState: AppState, artists: [String]) async -> [Song] {
         var candidates: [Song] = []
-        for artist in artists {
-            var songs = (try? await appState.client.topSongs(artist: artist, count: 8)) ?? []
-            // `getTopSongs` only really answers for artists with play history — Nirvana
-            // came back with a single track — so a thin answer is topped up by search.
-            if songs.count < 3 {
-                let extra = try? await appState.client.search(query: artist, songCount: 12)
-                songs += (extra?.songs ?? []).filter { $0.artist == artist }
+        // Eight artists at once rather than in turn: this is the first thing that happens
+        // on a cold Home, so it is the wait people actually see.
+        await withTaskGroup(of: [Song].self) { group in
+            for artist in artists {
+                group.addTask { [client = appState.client] in
+                    var songs = (try? await client.topSongs(artist: artist, count: 8)) ?? []
+                    // `getTopSongs` only really answers for artists with play history —
+                    // Nirvana came back with a single track — so a thin answer is topped
+                    // up by search.
+                    if songs.count < 3 {
+                        let extra = try? await client.search(query: artist, songCount: 12)
+                        songs += (extra?.songs ?? []).filter { $0.artist == artist }
+                    }
+                    return songs
+                }
             }
-            candidates += songs
+            for await songs in group { candidates += songs }
         }
         return candidates
     }
