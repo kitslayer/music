@@ -12,7 +12,11 @@ final class AudioSessionCoordinator {
     var onResume: (() -> Void)?
 
     private var isActivated = false
-    private var wasPlayingBeforeInterruption = false
+    /// Mirrors the controller's play state, kept current by `noteIsPlaying`.
+    private var isPlaying = false
+    /// Latched when an interruption arrives while playing, and the only thing that
+    /// authorises an automatic resume.
+    private var wasInterruptedWhilePlaying = false
     private var observers: [NSObjectProtocol] = []
 
     func configure() {
@@ -81,21 +85,22 @@ final class AudioSessionCoordinator {
 
         switch type {
         case .began:
-            // No special case for `.appWasSuspended`: it was never followed by
-            // `.ended` and iOS 16 stopped sending it at all.
+            // Latched **here**, before pausing. `onPause` runs the controller's own
+            // `pause()`, which reports `noteIsPlaying(false)` -- so reading the play state
+            // at `.ended` instead always saw false and auto-resume could never fire. That
+            // is the whole reason an Instagram reel used to stop the music for good.
+            //
+            // No special case for `.appWasSuspended`: it was never followed by `.ended`
+            // and iOS 16 stopped sending it at all.
+            wasInterruptedWhilePlaying = isPlaying
             onPause?()
 
         case .ended:
             let options = rawOptions
                 .map(AVAudioSession.InterruptionOptions.init(rawValue:)) ?? []
 
-            guard options.contains(.shouldResume), wasPlayingBeforeInterruption else { return }
-
-            // Reactivating *before* resuming is essential; skipping it is the
-            // classic cause of playback that resumes but produces no sound.
-            isActivated = false
-            activate()
-            onResume?()
+            guard options.contains(.shouldResume), wasInterruptedWhilePlaying else { return }
+            resumeAfterInterruption()
 
         @unknown default:
             break
@@ -114,7 +119,32 @@ final class AudioSessionCoordinator {
         }
     }
 
+    /// Resumes when the interruption ended without the system saying so.
+    ///
+    /// `.ended` is not guaranteed: an app that never deactivates its own session leaves
+    /// ours interrupted indefinitely, and coming back to the app is then the only signal
+    /// there is. Gated on the same latch, and on nothing else currently holding the
+    /// speaker, so this can never start music the user did not ask for.
+    func resumeIfInterruptionWentUnreported() {
+        guard wasInterruptedWhilePlaying,
+              !AVAudioSession.sharedInstance().isOtherAudioPlaying
+        else { return }
+        resumeAfterInterruption()
+    }
+
+    private func resumeAfterInterruption() {
+        wasInterruptedWhilePlaying = false
+        // Reactivating *before* resuming is essential; skipping it is the classic cause
+        // of playback that resumes but produces no sound.
+        isActivated = false
+        activate()
+        onResume?()
+    }
+
     func noteIsPlaying(_ isPlaying: Bool) {
-        wasPlayingBeforeInterruption = isPlaying
+        self.isPlaying = isPlaying
+        // Playing again -- by any route -- settles the question, so a stale latch cannot
+        // restart music minutes later.
+        if isPlaying { wasInterruptedWhilePlaying = false }
     }
 }

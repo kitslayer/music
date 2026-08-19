@@ -30,6 +30,10 @@ struct MusicApp: App {
                 .onChange(of: scenePhase) { _, phase in
                     switch phase {
                     case .active:
+                        // Some apps interrupt playback and then never release the
+                        // session, so `.ended` never arrives and coming back here is the
+                        // only signal that the interruption is over.
+                        appState.player.appBecameActive()
                         // Coming back is the most likely moment to have a network
                         // again after listening offline.
                         Task { await appState.flushOutbox() }

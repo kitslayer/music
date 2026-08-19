@@ -280,6 +280,14 @@ final class PlaybackController {
         persist()
     }
 
+    /// The app came back to the foreground.
+    ///
+    /// Only ever resumes music that an interruption paused, and only when nothing else is
+    /// using the speaker — the coordinator holds both conditions.
+    func appBecameActive() {
+        session.resumeIfInterruptionWentUnreported()
+    }
+
     func togglePlayPause() {
         isPlaying ? pause() : play()
     }
