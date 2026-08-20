@@ -34,6 +34,9 @@ struct MusicApp: App {
                         // session, so `.ended` never arrives and coming back here is the
                         // only signal that the interruption is over.
                         appState.player.appBecameActive()
+                        // iOS clears the idle-timer flag when the app leaves the
+                        // foreground, so it has to be set again on the way back.
+                        appState.screenAwake.apply()
                         // Coming back is the most likely moment to have a network
                         // again after listening offline.
                         Task { await appState.flushOutbox() }
@@ -49,6 +52,7 @@ struct MusicApp: App {
                         // termination while paused is common and silent.
                         appState.player.persistNow()
                         appState.history.saveNow()
+                        appState.screenAwake.release()
                     default:
                         break
                     }

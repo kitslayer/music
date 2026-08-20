@@ -36,6 +36,7 @@ final class AppState {
     let hermes = HermesAsk()
     let recentSearches = RecentSearches()
     let navigator = Navigator()
+    let screenAwake = ScreenAwake()
     let resume = ResumeStore()
     let native = NavidromeClient()
     let downloads = DownloadCenter()

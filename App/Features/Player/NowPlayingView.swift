@@ -18,6 +18,13 @@ struct NowPlayingView: View {
 
     private var player: PlaybackController { appState.player }
 
+    private var keepAwake: Binding<Bool> {
+        Binding(
+            get: { appState.screenAwake.isEnabled },
+            set: { appState.screenAwake.isEnabled = $0 }
+        )
+    }
+
     var body: some View {
         // Its own stack: without one, the artist name and the menu's "Go to Album" are
         // links with nowhere to push, which is to say dead. Browsing from inside the
@@ -184,6 +191,13 @@ struct NowPlayingView: View {
                         }
                     }
                     Divider()
+                    // Next to the sleep timer deliberately: one puts the music to sleep,
+                    // the other stops the screen doing it, and they get reached for in the
+                    // same moments — lyrics propped up on a desk, or a long mix.
+                    Toggle(isOn: keepAwake) {
+                        Label("Keep Screen On", systemImage: "sun.max")
+                    }
+
                     SleepTimerMenu()
                 } label: {
                     Image(systemName: "ellipsis")
@@ -371,6 +385,12 @@ struct NowPlayingView: View {
                     .foregroundStyle(Color.appTint)
             }
 
+            if appState.screenAwake.isEnabled {
+                Text("·")
+                Label("Screen on", systemImage: "sun.max.fill")
+                    .foregroundStyle(Color.appTint)
+            }
+
             Spacer(minLength: 0)
         }
         .font(.caption2)
@@ -546,6 +566,13 @@ private struct PlayerSeekBar: View {
     @State private var scrubValue: Double?
 
     private var player: PlaybackController { appState.player }
+
+    private var keepAwake: Binding<Bool> {
+        Binding(
+            get: { appState.screenAwake.isEnabled },
+            set: { appState.screenAwake.isEnabled = $0 }
+        )
+    }
 
     /// A stream with no determinable length -- a server-side transcode is chunked, so
     /// there is no duration and no seeking either.
