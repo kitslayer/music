@@ -10,16 +10,23 @@ struct ArtistDetailView: View {
     let artist: ArtistRef
 
     @State private var detail: ArtistDetail?
-    /// The artist's whole catalogue, most played first. `getTopSongs` is not used: it only
-    /// knows tracks that have been played, so it answers with a handful for a familiar
-    /// artist and *one* for Nirvana. Sorting the catalogue by the server's own play counts —
-    /// which include everything imported from Plex — gives a real popularity order of any
-    /// length, and leaves unplayed artists in album order rather than empty.
+    /// World popularity first, then the rest of the catalogue.
+    ///
+    /// `getTopSongs` really is a global chart — Last.fm's, through Navidrome's agent — and
+    /// asked for 50 it returns 50: Tame Impala comes back led by *Loser* and *Dracula*, its
+    /// current singles, not by anything this library has played. What it is bad at is
+    /// *matching* that chart to local files: Nirvana has 67 tracks here and one matched,
+    /// Radiohead 322 and three, because Last.fm's titles and the library's disagree about
+    /// remaster suffixes and punctuation.
+    ///
+    /// So the chart supplies the head of the list and the catalogue supplies the tail,
+    /// ordered by this library's own play counts. The top rows are the ones other players
+    /// would show, and the list still goes all the way down.
     @State private var popular: [Song] = []
     @State private var isGatheringDiscography = false
-    /// Ten is what every other player shows here. The rest are one tap away rather than a
-    /// screen away, because a 200-track wall would bury the Albums section underneath it.
-    @State private var showsAllPopular = false
+    /// Grows five at a time. A 322-track wall would bury the Albums section under it, and
+    /// "all of it or nothing" is a worse choice than "a bit more".
+    @State private var visiblePopularCount = ArtistDetailView.popularStep
 
     var body: some View {
         ScrollView {
@@ -49,17 +56,23 @@ struct ArtistDetailView: View {
                             .padding(.vertical, 6)
                         }
 
-                        if popular.count > Self.collapsedPopularCount {
+                        if popular.count > Self.popularStep {
                             Button {
                                 withAnimation(.easeInOut(duration: 0.2)) {
-                                    showsAllPopular.toggle()
+                                    if hiddenPopularCount == 0 {
+                                        visiblePopularCount = Self.popularStep
+                                    } else {
+                                        visiblePopularCount += Self.popularStep
+                                    }
                                 }
                             } label: {
                                 Label(
-                                    showsAllPopular
+                                    hiddenPopularCount == 0
                                         ? "Show less"
-                                        : "Show all \(popular.count) songs",
-                                    systemImage: showsAllPopular ? "chevron.up" : "chevron.down"
+                                        : "Show \(min(Self.popularStep, hiddenPopularCount)) more",
+                                    systemImage: hiddenPopularCount == 0
+                                        ? "chevron.up"
+                                        : "chevron.down"
                                 )
                                 .font(.subheadline.weight(.medium))
                                 .padding(.horizontal, Metrics.gutter)
@@ -177,10 +190,14 @@ struct ArtistDetailView: View {
         .padding(.top, Metrics.gutter)
     }
 
-    static let collapsedPopularCount = 10
+    static let popularStep = 5
 
     private var visiblePopular: [Song] {
-        showsAllPopular ? popular : Array(popular.prefix(Self.collapsedPopularCount))
+        Array(popular.prefix(visiblePopularCount))
+    }
+
+    private var hiddenPopularCount: Int {
+        max(0, popular.count - visiblePopularCount)
     }
 
     /// Plays the catalogue already in hand. It used to gather every album on the spot —
@@ -209,26 +226,42 @@ struct ArtistDetailView: View {
         isGatheringDiscography = true
         defer { isGatheringDiscography = false }
 
-        // Cached, so a second visit is instant and an artist page still fills in offline —
-        // it costs one request per album, which is the price of a real popularity order.
+        // The chart and the catalogue at once: the chart is one request, the catalogue is
+        // one per album and cached, so a second visit is instant and the page still fills in
+        // offline.
         let client = appState.client
         let id = artist.id
-        let songs: [Song]? = await appState.cached(CacheKey.artistSongs(id)) {
+        let name = artist.name
+
+        async let chart = try? client.topSongs(artist: name, count: 50)
+        async let catalogue: [Song]? = appState.cached(CacheKey.artistSongs(id)) {
             try await client.artistSongs(id: id)
         }
-        popular = Self.byPopularity(songs ?? [])
+
+        popular = Self.ordered(chart: await chart ?? [], catalogue: await catalogue ?? [])
     }
 
-    /// Most played first. Ties — which is *everything* for an artist that has never been
-    /// played — keep the catalogue's own release-then-track order, so the list is stable
-    /// between visits instead of reshuffling.
-    static func byPopularity(_ songs: [Song]) -> [Song] {
-        songs.enumerated()
+    /// The chart's order, then everything it missed by play count.
+    ///
+    /// Ties in the tail — which is *every* track for an artist never played — keep the
+    /// catalogue's release-then-track order, so the list does not reshuffle between visits.
+    static func ordered(chart: [Song], catalogue: [Song]) -> [Song] {
+        var seen: Set<String> = []
+        var result: [Song] = []
+
+        for song in chart where seen.insert(song.id).inserted {
+            result.append(song)
+        }
+
+        let rest = catalogue.enumerated()
+            .filter { !seen.contains($0.element.id) }
             .sorted { left, right in
                 let a = left.element.playCount ?? 0
                 let b = right.element.playCount ?? 0
                 return a == b ? left.offset < right.offset : a > b
             }
             .map(\.element)
+
+        return result + rest
     }
 }

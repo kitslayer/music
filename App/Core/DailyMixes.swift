@@ -722,9 +722,9 @@ final class DailyMixes {
             for artist in artists {
                 group.addTask { [client = appState.client] in
                     var songs = (try? await client.topSongs(artist: artist, count: 8)) ?? []
-                    // `getTopSongs` only really answers for artists with play history —
-                    // Nirvana came back with a single track — so a thin answer is topped
-                    // up by search.
+                    // `getTopSongs` is Last.fm's global chart, and Navidrome matches it to
+                    // local files by title — badly. Nirvana has 67 tracks here and one
+                    // matched. A thin answer means poor matching, not an unknown artist.
                     if songs.count < 3 {
                         let extra = try? await client.search(query: artist, songCount: 12)
                         songs += (extra?.songs ?? []).filter { $0.artist == artist }

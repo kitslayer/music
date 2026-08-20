@@ -390,11 +390,11 @@ actor SubsonicClient {
 
     /// Every track by an artist, in release order.
     ///
-    /// Subsonic has no "all songs by artist" call: `getTopSongs` returns a handful, and only
-    /// for artists with play history — Nirvana comes back with one track on this server. So
-    /// this is `getArtist` plus one `getAlbum` per album, fetched concurrently and then
-    /// reassembled in album order, because a discography that arrives in whichever order the
-    /// requests answered is not a discography.
+    /// Subsonic has no "all songs by artist" call, and `getTopSongs` is not it: that is
+    /// Last.fm's global chart matched to local files by title, which on this server finds one
+    /// Nirvana track out of 67. So this is `getArtist` plus one `getAlbum` per album, fetched
+    /// concurrently and reassembled in album order, because a discography that arrives in
+    /// whichever order the requests answered is not a discography.
     func artistSongs(id: String) async throws -> [Song] {
         let detail = try await artistDetail(id: id)
         let ordered = detail.albums.sorted { ($0.year ?? 0) < ($1.year ?? 0) }
