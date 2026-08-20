@@ -46,6 +46,7 @@ struct FavoritesView: View {
             }
         }
         .listStyle(.plain)
+        .playerClearance()
         .navigationTitle("Favourites")
         .toolbar {
             if let songs = starred?.songs, !songs.isEmpty {

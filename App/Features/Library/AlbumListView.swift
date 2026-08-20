@@ -65,6 +65,7 @@ struct AlbumListView: View {
             }
         }
         .navigationTitle(genre ?? decade.map { "\($0)s" } ?? "Albums")
+        .playerClearance()
         .toolbar {
             if genre == nil, decade == nil {
                 ToolbarItem(placement: .topBarTrailing) {

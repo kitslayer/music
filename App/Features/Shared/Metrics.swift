@@ -40,3 +40,33 @@ extension Color {
     /// derived from content.
     static let appTint = Color(red: 0.98, green: 0.28, blue: 0.36)
 }
+
+/// Room at the bottom of a scrolling screen for the now-playing bar.
+///
+/// On iOS 26 the bar lives in `tabViewBottomAccessory`, and the system reserves space for
+/// it — on a tab's *root*. It does not do so reliably on a pushed screen, which is why the
+/// last song of a playlist was sitting underneath it. So pushed screens ask for the room
+/// explicitly, and only when there is a bar to make room for: with no queue there is no
+/// bar, and a permanent 64pt hole at the bottom of every list is its own bug.
+///
+/// `safeAreaPadding` rather than `padding`: it extends the scroll view's content inset, so
+/// the list still scrolls under the bar rather than ending in a visible gap.
+struct PlayerClearance: ViewModifier {
+    @Environment(AppState.self) private var appState
+
+    func body(content: Content) -> some View {
+        content.safeAreaPadding(
+            .bottom,
+            appState.player.hasQueue ? Metrics.miniPlayerHeight + 8 : 0
+        )
+    }
+}
+
+extension View {
+    /// Attach to the scrolling container of any screen that is *pushed* rather than a tab
+    /// root. Harmless to attach twice; do not attach on tab roots, where the system
+    /// already reserves the space.
+    func playerClearance() -> some View {
+        modifier(PlayerClearance())
+    }
+}

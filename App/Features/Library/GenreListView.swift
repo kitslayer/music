@@ -37,6 +37,7 @@ struct GenreListView: View {
             }
         }
         .listStyle(.plain)
+        .playerClearance()
         .navigationTitle("Genres")
         .refreshable { await load() }
         .task(id: scope.generation) { await load() }
@@ -146,6 +147,7 @@ private struct GenreSongsView: View {
             }
         }
         .listStyle(.plain)
+        .playerClearance()
         .overlay {
             if songs.isEmpty, isLoadingPage { ProgressView() }
         }

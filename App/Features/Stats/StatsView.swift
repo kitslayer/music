@@ -41,6 +41,7 @@ struct StatsView: View {
             storageSection
         }
         .navigationTitle("Stats")
+        .playerClearance()
         .refreshable { await load() }
         .task { await load() }
     }

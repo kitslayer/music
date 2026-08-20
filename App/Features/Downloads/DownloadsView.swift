@@ -39,6 +39,7 @@ struct DownloadsView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .playerClearance()
         .navigationTitle("Downloads")
         .toolbar {
             if !downloads.catalog.entries.isEmpty {

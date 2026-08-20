@@ -56,6 +56,7 @@ struct RediscoverView: View {
             anniversarySection("A Month Ago", songs: model.monthAgo)
         }
         .listStyle(.insetGrouped)
+        .playerClearance()
         .navigationTitle("Rediscover")
         .overlay {
             if model.isLoading, model.isEmpty { ProgressView() }

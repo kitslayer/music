@@ -77,6 +77,7 @@ struct LyricSearchView: View {
             }
         }
         .navigationTitle("Lyric Search")
+        .playerClearance()
         .task {
             guard query.isEmpty, !initialQuery.isEmpty else { return }
             query = initialQuery

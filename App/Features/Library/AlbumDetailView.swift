@@ -35,6 +35,7 @@ struct AlbumDetailView: View {
             }
         }
         .listStyle(.plain)
+        .playerClearance()
         .collapsingTitle(album.name)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

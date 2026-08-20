@@ -96,6 +96,7 @@ struct VibePlaylistView: View {
             }
         }
         .navigationTitle("Make a Playlist")
+        .playerClearance()
         .task {
             await store.loadIfNeeded()
             await appState.hermes.refreshVibes(playlists: store.playlists)

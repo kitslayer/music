@@ -72,6 +72,7 @@ struct ArtistListView: View {
             }
         }
         .listStyle(.plain)
+        .playerClearance()
         .navigationTitle("Artists")
         .overlay {
             if isLoading, indexes.isEmpty { ProgressView() }

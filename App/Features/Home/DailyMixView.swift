@@ -66,6 +66,7 @@ struct DailyMixView: View {
                     }
                 }
                 .listStyle(.plain)
+        .playerClearance()
                 .collapsingTitle(mix.title)
             } else {
                 // Only reachable if the mixes were rebuilt for a different day or folder

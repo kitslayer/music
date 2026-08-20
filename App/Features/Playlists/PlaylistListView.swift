@@ -57,6 +57,7 @@ struct PlaylistListView: View {
             }
         }
         .listStyle(.plain)
+        .playerClearance()
         .navigationTitle("Playlists")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -205,6 +206,7 @@ struct PlaylistDetailView: View {
             }
         }
         .listStyle(.plain)
+        .playerClearance()
         .environment(\.editMode, .constant(isReordering ? .active : .inactive))
         .collapsingTitle(playlist.name)
         .toolbar {

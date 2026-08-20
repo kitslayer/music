@@ -55,6 +55,7 @@ struct LibraryHealthView: View {
             }
         }
         .navigationTitle("Library Health")
+        .playerClearance()
         .toolbar {
             if let report {
                 ToolbarItem(placement: .topBarTrailing) {

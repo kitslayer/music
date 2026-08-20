@@ -63,6 +63,7 @@ struct TripModeView: View {
             }
         }
         .navigationTitle("Trip Mode")
+        .playerClearance()
         .overlay {
             if model.isLoading, model.groups.isEmpty { ProgressView() }
         }

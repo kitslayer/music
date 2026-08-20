@@ -129,6 +129,7 @@ struct ArtistDetailView: View {
             .padding(.bottom, 24)
         }
         .collapsingTitle(artist.name)
+        .playerClearance()
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 FavoriteButton(

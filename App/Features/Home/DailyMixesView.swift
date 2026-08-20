@@ -51,6 +51,7 @@ struct DailyMixesView: View {
             }
         }
         .listStyle(.plain)
+        .playerClearance()
         .navigationTitle("Made for You")
         .toolbar {
             if scope.isSwitchable {
