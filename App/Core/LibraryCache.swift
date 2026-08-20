@@ -78,6 +78,7 @@ enum CacheKey {
     static func playlist(_ id: String) -> String { "playlist-\(id)" }
     static func album(_ id: String) -> String { "album-\(id)" }
     static func artist(_ id: String) -> String { "artist-\(id)" }
+    static func artistSongs(_ id: String) -> String { "artist-songs-\(id)" }
     static func albumList(_ sort: String, _ scope: String) -> String {
         "albums-\(sort)-\(scope)"
     }

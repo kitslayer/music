@@ -10,40 +10,61 @@ struct ArtistDetailView: View {
     let artist: ArtistRef
 
     @State private var detail: ArtistDetail?
-    @State private var topSongs: [Song] = []
-    /// Every track by the artist, in album order. Loaded lazily by Play/Shuffle
-    /// because it costs one request per album and most visits never press either.
+    /// The artist's whole catalogue, most played first. `getTopSongs` is not used: it only
+    /// knows tracks that have been played, so it answers with a handful for a familiar
+    /// artist and *one* for Nirvana. Sorting the catalogue by the server's own play counts —
+    /// which include everything imported from Plex — gives a real popularity order of any
+    /// length, and leaves unplayed artists in album order rather than empty.
+    @State private var popular: [Song] = []
     @State private var isGatheringDiscography = false
+    /// Ten is what every other player shows here. The rest are one tap away rather than a
+    /// screen away, because a 200-track wall would bury the Albums section underneath it.
+    @State private var showsAllPopular = false
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: Metrics.shelfSpacing) {
                 header
 
-                // Omitted entirely when empty: Navidrome without a Last.fm key
-                // returns nothing here, and an empty section looks broken.
-                if !topSongs.isEmpty {
+                if !popular.isEmpty {
                     VStack(alignment: .leading, spacing: Metrics.headerToContent) {
-                        Text("Top Songs")
+                        Text("Popular")
                             .font(.title3.weight(.semibold))
                             .padding(.horizontal, Metrics.gutter)
 
-                        ForEach(Array(topSongs.enumerated()), id: \.element.id) { index, song in
+                        // `PlayableSongRow`, so a tap plays the list from that point and the
+                        // menu, star, rating and download all come free — the hand-rolled
+                        // Button/SongRow pair this replaces had only tap-to-play.
+                        // The row's index is into the *whole* ordered list, so tapping the
+                        // third one plays from there through everything below it in
+                        // popularity order — collapsed or not.
+                        ForEach(Array(visiblePopular.enumerated()), id: \.offset) { index, _ in
+                            PlayableSongRow(
+                                songs: popular,
+                                index: index,
+                                source: artist.name,
+                                showsNavigation: false
+                            )
+                            .padding(.horizontal, Metrics.gutter)
+                            .padding(.vertical, 6)
+                        }
+
+                        if popular.count > Self.collapsedPopularCount {
                             Button {
-                                appState.player.play(
-                                    songs: topSongs, startingAt: index, source: artist.name
-                                )
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    showsAllPopular.toggle()
+                                }
                             } label: {
-                                SongRow(
-                                    song: song,
-                                    style: .withArtwork,
-                                    isCurrent: appState.player.currentSong?.id == song.id
+                                Label(
+                                    showsAllPopular
+                                        ? "Show less"
+                                        : "Show all \(popular.count) songs",
+                                    systemImage: showsAllPopular ? "chevron.up" : "chevron.down"
                                 )
+                                .font(.subheadline.weight(.medium))
                                 .padding(.horizontal, Metrics.gutter)
-                                .padding(.vertical, 6)
+                                .padding(.vertical, 8)
                             }
-                            .buttonStyle(.plain)
-                            .contextMenu { SongMenu(song: song, showsNavigation: false) }
                         }
                     }
                 }
@@ -156,41 +177,22 @@ struct ArtistDetailView: View {
         .padding(.top, Metrics.gutter)
     }
 
-    /// Albums are fetched concurrently but the result is assembled in release order,
-    /// so "Play" starts with the earliest record rather than whichever request
-    /// happened to answer first.
-    private func playDiscography(shuffled: Bool) {
-        guard !isGatheringDiscography, let albums = detail?.albums, !albums.isEmpty else { return }
-        isGatheringDiscography = true
+    static let collapsedPopularCount = 10
 
-        Task {
-            let ordered = albums.sorted { ($0.year ?? 0) < ($1.year ?? 0) }
-            var byAlbum: [String: [Song]] = [:]
-
-            await withTaskGroup(of: (String, [Song]).self) { group in
-                for album in ordered {
-                    group.addTask { [client = appState.client] in
-                        let detail = try? await client.albumDetail(id: album.id)
-                        return (album.id, detail?.songs ?? [])
-                    }
-                }
-                for await (id, songs) in group {
-                    byAlbum[id] = songs
-                }
-            }
-
-            let songs = ordered.flatMap { byAlbum[$0.id] ?? [] }
-            isGatheringDiscography = false
-            guard !songs.isEmpty else { return }
-
-            appState.player.play(
-                songs: songs, startingAt: 0, source: artist.name, shuffled: shuffled
-            )
-        }
+    private var visiblePopular: [Song] {
+        showsAllPopular ? popular : Array(popular.prefix(Self.collapsedPopularCount))
     }
 
-    /// Reuses the same busy flag as Play/Shuffle: both walk every album, and showing
-    /// two independent spinners for one kind of work would be noise.
+    /// Plays the catalogue already in hand. It used to gather every album on the spot —
+    /// the same requests the Popular list now makes on load — so pressing Play meant
+    /// waiting for a fetch that had already happened.
+    private func playDiscography(shuffled: Bool) {
+        guard !popular.isEmpty else { return }
+        appState.player.play(
+            songs: popular, startingAt: 0, source: artist.name, shuffled: shuffled
+        )
+    }
+
     private func startArtistRadio() {
         guard !isGatheringDiscography else { return }
         isGatheringDiscography = true
@@ -203,6 +205,30 @@ struct ArtistDetailView: View {
 
     private func load() async {
         detail = try? await appState.client.artistDetail(id: artist.id)
-        topSongs = (try? await appState.client.topSongs(artist: artist.name)) ?? []
+
+        isGatheringDiscography = true
+        defer { isGatheringDiscography = false }
+
+        // Cached, so a second visit is instant and an artist page still fills in offline —
+        // it costs one request per album, which is the price of a real popularity order.
+        let client = appState.client
+        let id = artist.id
+        let songs: [Song]? = await appState.cached(CacheKey.artistSongs(id)) {
+            try await client.artistSongs(id: id)
+        }
+        popular = Self.byPopularity(songs ?? [])
+    }
+
+    /// Most played first. Ties — which is *everything* for an artist that has never been
+    /// played — keep the catalogue's own release-then-track order, so the list is stable
+    /// between visits instead of reshuffling.
+    static func byPopularity(_ songs: [Song]) -> [Song] {
+        songs.enumerated()
+            .sorted { left, right in
+                let a = left.element.playCount ?? 0
+                let b = right.element.playCount ?? 0
+                return a == b ? left.offset < right.offset : a > b
+            }
+            .map(\.element)
     }
 }

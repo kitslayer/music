@@ -388,6 +388,34 @@ actor SubsonicClient {
         try await get("getArtist.view", query: ["id": id], as: ArtistDetail.self)
     }
 
+    /// Every track by an artist, in release order.
+    ///
+    /// Subsonic has no "all songs by artist" call: `getTopSongs` returns a handful, and only
+    /// for artists with play history — Nirvana comes back with one track on this server. So
+    /// this is `getArtist` plus one `getAlbum` per album, fetched concurrently and then
+    /// reassembled in album order, because a discography that arrives in whichever order the
+    /// requests answered is not a discography.
+    func artistSongs(id: String) async throws -> [Song] {
+        let detail = try await artistDetail(id: id)
+        let ordered = detail.albums.sorted { ($0.year ?? 0) < ($1.year ?? 0) }
+        guard !ordered.isEmpty else { return [] }
+
+        var byAlbum: [String: [Song]] = [:]
+        await withTaskGroup(of: (String, [Song]).self) { group in
+            for album in ordered {
+                group.addTask { [weak self] in
+                    guard let self else { return (album.id, []) }
+                    return (album.id, (try? await albumDetail(id: album.id))?.songs ?? [])
+                }
+            }
+            for await (albumID, songs) in group {
+                byAlbum[albumID] = songs
+            }
+        }
+
+        return ordered.flatMap { byAlbum[$0.id] ?? [] }
+    }
+
     /// One song by id, for the cases where an id is all there is.
     func song(id: String) async throws -> Song {
         try await get("getSong.view", query: ["id": id], as: FetchedSong.self).song
