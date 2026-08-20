@@ -162,7 +162,27 @@ struct NowPlayingView: View {
                     // No rating rows here: the five stars are already on screen a few
                     // points below, and a heart is what marks a favourite now — one
                     // meaning per glyph.
-                    SongMenu(song: song, showsRating: false)
+                    // `showsNavigation: false` because the menu's own Go to Album/Artist
+                    // are `NavigationLink`s, which push *inside* the player — the dead end
+                    // this screen's own jumps avoid. Replaced below with jumps.
+                    SongMenu(song: song, showsNavigation: false, showsRating: false)
+
+                    if let albumId = song.albumId, let album = song.album {
+                        Button("Go to Album", systemImage: "square.stack") {
+                            appState.navigator.open(.album(AlbumRef(
+                                id: albumId, name: album,
+                                artist: song.artist, coverArt: song.coverArt
+                            )))
+                        }
+                    }
+
+                    if let artistId = song.artistId, let artist = song.artist {
+                        Button("Go to Artist", systemImage: "music.mic") {
+                            appState.navigator.open(
+                                .artist(ArtistRef(id: artistId, name: artist))
+                            )
+                        }
+                    }
                     Divider()
                     SleepTimerMenu()
                 } label: {
@@ -248,16 +268,43 @@ struct NowPlayingView: View {
 
                 // Tappable, because "who is this" is the most common next question and
                 // the menu is two taps away.
+                //
+                // A **jump**, not a push: pushing inside the player leaves you on an
+                // artist page with no tab bar and no player bar, because the player is a
+                // layer above both. `Navigator` closes the player and opens it in Library
+                // instead, where the chrome is.
                 if let artist = song.artist {
                     if let artistId = song.artistId {
-                        NavigationLink(value: Destination.artist(
-                            ArtistRef(id: artistId, name: artist)
-                        )) {
+                        Button {
+                            appState.navigator.open(
+                                .artist(ArtistRef(id: artistId, name: artist))
+                            )
+                        } label: {
                             artistLabel(artist)
                         }
                         .buttonStyle(.plain)
                     } else {
                         artistLabel(artist)
+                    }
+                }
+
+                // The album, on screen rather than two taps into a menu — "what record is
+                // this from" is the other question this screen gets asked.
+                if let album = song.album {
+                    if let albumId = song.albumId {
+                        Button {
+                            appState.navigator.open(.album(AlbumRef(
+                                id: albumId,
+                                name: album,
+                                artist: song.artist,
+                                coverArt: song.coverArt
+                            )))
+                        } label: {
+                            albumLabel(album, isLink: true)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        albumLabel(album, isLink: false)
                     }
                 }
             }
@@ -277,6 +324,21 @@ struct NowPlayingView: View {
             .font(.title3)
             .foregroundStyle(.white.opacity(0.7))
             .lineLimit(1)
+    }
+
+    /// Quieter than the artist and marked with a chevron when it goes somewhere, so the
+    /// two lines do not read as equally important.
+    private func albumLabel(_ album: String, isLink: Bool) -> some View {
+        HStack(spacing: 4) {
+            Text(album)
+                .font(.subheadline)
+                .lineLimit(1)
+            if isLink {
+                Image(systemName: "chevron.right")
+                    .font(.caption2)
+            }
+        }
+        .foregroundStyle(.white.opacity(0.5))
     }
 
     /// The quiet line Plexamp gets right: what you are actually hearing, and where you

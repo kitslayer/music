@@ -8,7 +8,19 @@ struct MainTabView: View {
     @Environment(PlaylistStore.self) private var playlistStore
     @Environment(QueueSync.self) private var queueSync
 
-    @State private var showsPlayer = false
+    private var navigator: Navigator { appState.navigator }
+
+    private var showsPlayer: Binding<Bool> {
+        Binding(
+            get: { appState.navigator.showsPlayer },
+            set: { appState.navigator.showsPlayer = $0 }
+        )
+    }
+
+    /// Which tab is showing. Needed so a jump out of the player can select Library.
+    @State private var selection = Tabs.home
+
+    private enum Tabs: Hashable { case home, library, search }
 
     var body: some View {
         Group {
@@ -18,7 +30,7 @@ struct MainTabView: View {
                     // itself, which a hand-rolled `safeAreaInset` did not do reliably
                     // -- the bar was covering the bottom of some screens.
                     .tabViewBottomAccessory {
-                        MiniPlayerBar(showsPlayer: $showsPlayer, isSystemAccessory: true)
+                        MiniPlayerBar(showsPlayer: showsPlayer, isSystemAccessory: true)
                     }
             } else {
                 tabs
@@ -31,8 +43,8 @@ struct MainTabView: View {
         // and drops back slightly as the player comes up, which is what gives the
         // gesture somewhere to go.
         .overlay {
-            if showsPlayer {
-                NowPlayingView(onDismiss: { showsPlayer = false })
+            if navigator.showsPlayer {
+                NowPlayingView(onDismiss: { navigator.showsPlayer = false })
                     .transition(.move(edge: .bottom))
                     .zIndex(2)
             }
@@ -43,7 +55,14 @@ struct MainTabView: View {
         .animation(.snappy(duration: 0.25), value: queueSync.available)
         // Matched to the drag's own spring so opening and closing feel like the same
         // movement whether it was a tap or a swipe.
-        .animation(.spring(response: 0.38, dampingFraction: 0.86), value: showsPlayer)
+        .animation(.spring(response: 0.38, dampingFraction: 0.86), value: navigator.showsPlayer)
+        // A jump out of the player asks for Library; the switch happens here because the
+        // selection lives with the tabs.
+        .onChange(of: navigator.wantsLibraryTab) { _, wants in
+            guard wants else { return }
+            selection = .library
+            navigator.didSelectLibraryTab()
+        }
     }
 
     /// Offered rather than applied. Another device's queue arriving unannounced and
@@ -111,16 +130,16 @@ struct MainTabView: View {
     }
 
     private var tabs: some View {
-        TabView {
-            Tab("Home", systemImage: "house") {
+        TabView(selection: $selection) {
+            Tab("Home", systemImage: "house", value: Tabs.home) {
                 hosted { HomeView() }
             }
 
-            Tab("Library", systemImage: "square.stack") {
+            Tab("Library", systemImage: "square.stack", value: Tabs.library) {
                 hosted { LibraryHubView() }
             }
 
-            Tab(role: .search) {
+            Tab(value: Tabs.search, role: .search) {
                 hosted { SearchView() }
             }
         }
@@ -138,7 +157,7 @@ struct MainTabView: View {
         } else {
             content()
                 .safeAreaInset(edge: .bottom, spacing: 0) {
-                    MiniPlayerBar(showsPlayer: $showsPlayer)
+                    MiniPlayerBar(showsPlayer: showsPlayer)
                 }
         }
     }

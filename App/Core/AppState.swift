@@ -35,6 +35,7 @@ final class AppState {
     let mixes = DailyMixes()
     let hermes = HermesAsk()
     let recentSearches = RecentSearches()
+    let navigator = Navigator()
     let resume = ResumeStore()
     let native = NavidromeClient()
     let downloads = DownloadCenter()

@@ -14,8 +14,16 @@ struct LibraryHubView: View {
         GridItem(.flexible(), spacing: Metrics.itemSpacing),
     ]
 
+    /// Driven by `Navigator`, so a jump out of the player can push into this tab.
+    private var libraryPath: Binding<NavigationPath> {
+        Binding(
+            get: { appState.navigator.libraryPath },
+            set: { appState.navigator.libraryPath = $0 }
+        )
+    }
+
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: libraryPath) {
             List {
                 Section {
                     row("Playlists", "music.note.list", .playlists)
